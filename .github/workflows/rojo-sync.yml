@@ -1,8 +1,10 @@
-name: Rojo Sync & Validate
+name: Rojo Sync, Validate & Release
 
 on:
   push:
     branches: [main]
+    tags:
+      - 'v*.*.*'
   pull_request:
     branches: [main]
 
@@ -32,12 +34,42 @@ jobs:
             luac -p "$f" && echo "✅ $f OK" || echo "❌ $f FAILED"
           done
 
-  notify:
-    name: Notify on success
+  release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
     needs: validate
-    if: success()
+    if: startsWith(github.ref, 'refs/tags/v')
 
     steps:
-      - name: Summary
-        run: echo "✅ All Lua scripts validated successfully!"
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Rojo
+        run: |
+          curl -L https://github.com/rojo-rbx/rojo/releases/latest/download/rojo-linux-x86_64.zip -o rojo.zip
+          unzip rojo.zip
+          chmod +x rojo
+          sudo mv rojo /usr/local/bin/rojo
+
+      - name: Build .rbxm package
+        run: rojo build --output roblox-procedural-worlds-${{ github.ref_name }}.rbxm
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Release ${{ github.ref_name }}"
+          body: |
+            ## 🚀 roblox-procedural-worlds ${{ github.ref_name }}
+
+            ### Instalare
+            1. Descarcă fișierul `.rbxm` de mai jos
+            2. Drag & drop în Roblox Studio
+            3. Plasează în `ServerScriptService`
+
+            ### Changelog
+            Vezi [commit history](https://github.com/Gzeu/roblox-procedural-worlds/commits/main) pentru detalii.
+          files: roblox-procedural-worlds-${{ github.ref_name }}.rbxm
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
