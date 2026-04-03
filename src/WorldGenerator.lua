@@ -1,94 +1,108 @@
 --!strict
 -- ============================================================
--- MAIN SCRIPT: ServerScriptService/WorldGenerator  [v2]
--- - Resolves seed
--- - Dispatches all chunks with concurrency throttle
--- - Marks each chunk loaded in StreamingManager
--- - Starts StreamingManager after initial generation
+-- MAIN SCRIPT: ServerScriptService/WorldGenerator  [v2.1]
+-- Orchestrates full world generation:
+--   1. Seed resolution (DataStore persistence or manual override)
+--   2. Initial chunk grid with concurrency throttle
+--   3. River carving (post-terrain)
+--   4. Dungeon generation (post-terrain, underground)
+--   5. StreamingManager boot (runtime load/unload)
+--   6. WeatherManager boot (biome-zone weather)
 -- ============================================================
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService        = game:GetService("RunService")
+local ReplicatedStorage   = game:GetService("ReplicatedStorage")
+local ServerScriptService = game:GetService("ServerScriptService")
 
 local WorldConfig      = require(ReplicatedStorage:WaitForChild("WorldConfig"))
 local ChunkHandler     = require(ReplicatedStorage:WaitForChild("ChunkHandler"))
-local AssetPlacer      = require(ReplicatedStorage:WaitForChild("AssetPlacer"))
 local StreamingManager = require(ReplicatedStorage:WaitForChild("StreamingManager"))
+local AssetPlacer      = require(ReplicatedStorage:WaitForChild("AssetPlacer"))
+local RiverCarver      = require(ReplicatedStorage:WaitForChild("RiverCarver"))
+local DungeonGenerator = require(ReplicatedStorage:WaitForChild("DungeonGenerator"))
+local WeatherManager   = require(ReplicatedStorage:WaitForChild("WeatherManager"))
+local SeedPersistence  = require(ServerScriptService:WaitForChild("SeedPersistence"))
 
--- Seed
+-- ----------------------------------------------------------------
+-- Resolve Seed
+-- ----------------------------------------------------------------
+local cfg = WorldConfig.Settings
+
 local seed: number
-if WorldConfig.Settings.Seed == 0 then
-	seed = math.floor(tick() % 100000)
-	print("[WorldGenerator] 🌍 Random seed:", seed)
+if cfg.Seed ~= 0 then
+	seed = cfg.Seed
+	print("[WorldGenerator] Using manual seed:", seed)
 else
-	seed = WorldConfig.Settings.Seed
-	print("[WorldGenerator] 🌍 Fixed seed:", seed)
+	seed = SeedPersistence.GetOrCreateSeed()
 end
+
 math.randomseed(seed)
 
+-- ----------------------------------------------------------------
+-- Init asset container in Workspace
+-- ----------------------------------------------------------------
 AssetPlacer.Init()
 
--- Build chunk queue
-local cfg   = WorldConfig.Settings
+-- ----------------------------------------------------------------
+-- Initial chunk generation
+-- ----------------------------------------------------------------
 local halfX = cfg.WorldSizeX / 2
 local halfZ = cfg.WorldSizeZ / 2
 
-type ChunkCoord = { x: number, z: number }
-local chunkQueue: { ChunkCoord } = {}
+local pending   = 0
+local completed = 0
+local total     = 0
 
-for cx = -halfX, halfX - cfg.ChunkSize, cfg.ChunkSize do
-	for cz = -halfZ, halfZ - cfg.ChunkSize, cfg.ChunkSize do
-		table.insert(chunkQueue, { x = cx, z = cz })
+for _ = -halfX, halfX - cfg.ChunkSize, cfg.ChunkSize do
+	for _ = -halfZ, halfZ - cfg.ChunkSize, cfg.ChunkSize do
+		total += 1
 	end
 end
 
-local totalChunks     = #chunkQueue
-local activeChunks    = 0
-local completedChunks = 0
-local queueIndex      = 1
+print(string.format("[WorldGenerator] Generating %d chunks (seed=%d)…", total, seed))
 
-print(string.format(
-	"[WorldGenerator] Queued %d chunks (%d×%d world, chunkSize=%d)",
-	totalChunks, cfg.WorldSizeX, cfg.WorldSizeZ, cfg.ChunkSize
-))
-
-local startTime = tick()
-
-local connection: RBXScriptConnection
-connection = RunService.Heartbeat:Connect(function()
-	-- Fill up to concurrency cap
-	while queueIndex <= totalChunks and activeChunks < cfg.MaxConcurrentChunks do
-		local coord = chunkQueue[queueIndex]
-		queueIndex   += 1
-		activeChunks += 1
-
+for cx = -halfX, halfX - cfg.ChunkSize, cfg.ChunkSize do
+	for cz = -halfZ, halfZ - cfg.ChunkSize, cfg.ChunkSize do
+		while pending >= cfg.MaxConcurrentChunks do
+			task.wait(0.05)
+		end
+		pending += 1
 		task.spawn(function()
-			local ok, err = pcall(ChunkHandler.GenerateChunk, coord.x, coord.z, seed)
+			local ok, err = pcall(ChunkHandler.GenerateChunk, cx, cz, seed)
 			if ok then
-				StreamingManager.MarkLoaded(coord.x, coord.z)
+				StreamingManager.MarkLoaded(cx, cz)
 			else
-				warn(string.format("[WorldGenerator] Chunk (%d,%d) failed: %s",
-					coord.x, coord.z, tostring(err)))
+				warn(string.format("[WorldGenerator] Chunk (%d,%d) failed: %s", cx, cz, tostring(err)))
 			end
-			activeChunks    -= 1
-			completedChunks += 1
-
-			if completedChunks % 25 == 0 or completedChunks == totalChunks then
-				print(string.format("[WorldGenerator] %d/%d (%.0f%%)",
-					completedChunks, totalChunks,
-					(completedChunks / totalChunks) * 100))
-			end
+			pending   -= 1
+			completed += 1
 		end)
 	end
+end
 
-	if completedChunks >= totalChunks then
-		connection:Disconnect()
-		local elapsed = math.floor(tick() - startTime)
-		print(string.format(
-			"[WorldGenerator] ✅ Done! %d chunks in %ds. Seed: %d",
-			totalChunks, elapsed, seed
-		))
-		-- Start runtime streaming around players
-		StreamingManager.Start(seed)
-	end
+while completed < total do
+	task.wait(0.5)
+	print(string.format("[WorldGenerator] Progress: %d / %d chunks", completed, total))
+end
+
+print("[WorldGenerator] Initial terrain complete.")
+
+-- ----------------------------------------------------------------
+-- Post-terrain passes
+-- ----------------------------------------------------------------
+task.spawn(function()
+	print("[WorldGenerator] Starting river carving…")
+	RiverCarver.CarveRivers(seed)
 end)
+
+task.spawn(function()
+	print("[WorldGenerator] Starting dungeon generation…")
+	DungeonGenerator.GenerateDungeons(seed)
+end)
+
+-- ----------------------------------------------------------------
+-- Runtime systems
+-- ----------------------------------------------------------------
+StreamingManager.Start(seed)
+WeatherManager.Start(seed)
+
+print("[WorldGenerator] All systems running.")

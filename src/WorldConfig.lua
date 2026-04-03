@@ -1,70 +1,71 @@
 --!strict
 -- ============================================================
--- MODULE: ReplicatedStorage/WorldConfig  [v2]
+-- MODULE: ReplicatedStorage/WorldConfig  [v2.1]
 -- Single source of truth for all generation parameters.
 -- ============================================================
 
 local WorldConfig = {}
 
 WorldConfig.Settings = {
-	-- World footprint in studs (centred on origin)
 	WorldSizeX = 500,
 	WorldSizeZ = 500,
-
-	-- Chunk size in studs
 	ChunkSize = 30,
-
-	-- Y origin for terrain surface
 	BaseY = 0,
-
-	-- Below this Y -> Water material
 	WaterLevel = -8,
-
-	-- 0 = random seed each run; any other int = reproducible
+	-- 0 = random seed (persisted via DataStore); non-zero = manual override
 	Seed = 0,
-
-	-- Noise scales
 	TerrainScale   = 120,
 	MountainScale  = 60,
 	CaveScale      = 40,
 	TempScale      = 200,
 	MoistureScale  = 180,
-
-	-- Height amplitudes (studs)
 	TerrainAmplitude  = 20,
 	MountainAmplitude = 35,
-
-	-- Cave settings
 	CaveThreshold = 0.30,
 	CaveMinY      = -60,
 	CaveMaxY      = -10,
-
-	-- Voxel resolution (Roblox min = 4)
 	VoxelSize = 4,
-
-	-- Surface spawn probabilities
 	TreeSpawnChance      = 0.04,
 	RockSpawnChance      = 0.02,
 	BushSpawnChance      = 0.03,
 	StructureSpawnChance = 0.005,
-
-	-- Max parallel chunk tasks
 	MaxConcurrentChunks = 10,
-
-	-- Streaming: radius (studs) around each player to keep loaded
 	StreamingRadius = 300,
-	-- How often (seconds) streaming manager checks player positions
 	StreamingCheckInterval = 5,
+	WeatherCheckInterval = 8,
+}
+
+-- ============================================================
+-- River Settings  [v2.1]
+-- ============================================================
+WorldConfig.RiverSettings = {
+	SpringGridStep  = 80,
+	SpringMinHeight = 12,
+	MaxSteps        = 200,
+	StepSize        = 4,
+	RiverRadius     = 6,
+	MaxRivers       = 12,
+}
+
+-- ============================================================
+-- Dungeon Settings  [v2.1]
+-- ============================================================
+WorldConfig.DungeonSettings = {
+	DungeonY       = -90,
+	DungeonWidth   = 80,
+	DungeonHeight  = 80,
+	GridStep       = 150,
+	MaxDungeons    = 6,
+	SpawnThreshold = 0.25,
 }
 
 -- ============================================================
 -- Ore vein definitions
--- Each entry drives OreGenerator.CheckAndPlaceOre()
 -- ============================================================
 WorldConfig.OreVeins = {
 	{
 		Name       = "Coal",
-		Material   = Enum.Material.SmoothPlastic, -- replace with custom MaterialVariant
+		Material   = Enum.Material.SmoothPlastic,
 		MinY       = -60,
 		MaxY       = -5,
 		Scale      = 18,
@@ -102,7 +103,6 @@ WorldConfig.OreVeins = {
 
 -- ============================================================
 -- Biome definitions
--- Must match BiomeResolver.BIOME_POLES keys exactly.
 -- ============================================================
 WorldConfig.Biomes = {
 	Forest = {
