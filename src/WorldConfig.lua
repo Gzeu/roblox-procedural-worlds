@@ -17,18 +17,18 @@ WorldConfig.Settings = {
 	-- Y origin for terrain surface
 	BaseY = 0,
 
-	-- Below this Y → Water material
+	-- Below this Y -> Water material
 	WaterLevel = -8,
 
 	-- 0 = random seed each run; any other int = reproducible
 	Seed = 0,
 
 	-- Noise scales
-	TerrainScale  = 120,
-	MountainScale = 60,
-	CaveScale     = 40,
-	TempScale     = 200,
-	MoistureScale = 180,
+	TerrainScale   = 120,
+	MountainScale  = 60,
+	CaveScale      = 40,
+	TempScale      = 200,
+	MoistureScale  = 180,
 
 	-- Height amplitudes (studs)
 	TerrainAmplitude  = 20,
@@ -57,121 +57,143 @@ WorldConfig.Settings = {
 	StreamingCheckInterval = 5,
 }
 
--- ----------------------------------------------------------------
--- 9 Biomes — (temperature, moisture) poles defined in BiomeResolver
--- ----------------------------------------------------------------
+-- ============================================================
+-- Ore vein definitions
+-- Each entry drives OreGenerator.CheckAndPlaceOre()
+-- ============================================================
+WorldConfig.OreVeins = {
+	{
+		Name       = "Coal",
+		Material   = Enum.Material.SmoothPlastic, -- replace with custom MaterialVariant
+		MinY       = -60,
+		MaxY       = -5,
+		Scale      = 18,
+		Threshold  = 0.72,
+		SeedOffset = 10000,
+	},
+	{
+		Name       = "Iron",
+		Material   = Enum.Material.Metal,
+		MinY       = -80,
+		MaxY       = -20,
+		Scale      = 14,
+		Threshold  = 0.78,
+		SeedOffset = 20000,
+	},
+	{
+		Name       = "Gold",
+		Material   = Enum.Material.Neon,
+		MinY       = -120,
+		MaxY       = -50,
+		Scale      = 12,
+		Threshold  = 0.84,
+		SeedOffset = 30000,
+	},
+	{
+		Name       = "Diamond",
+		Material   = Enum.Material.Ice,
+		MinY       = -160,
+		MaxY       = -90,
+		Scale      = 10,
+		Threshold  = 0.90,
+		SeedOffset = 40000,
+	},
+}
+
+-- ============================================================
+-- Biome definitions
+-- Must match BiomeResolver.BIOME_POLES keys exactly.
+-- ============================================================
 WorldConfig.Biomes = {
 	Forest = {
 		Name            = "Forest",
 		SurfaceMaterial = Enum.Material.Grass,
 		FillMaterial    = Enum.Material.Mud,
 		DebugColor      = Color3.fromRGB(34, 139, 34),
-		Trees = true, Rocks = true, Bushes = true,
-		Structures = { "Campfire", "WoodRuin" },
+		Trees           = true,
+		Rocks           = true,
+		Bushes          = true,
+		Structures      = { "Campfire", "WoodRuin" },
 	},
 	Desert = {
 		Name            = "Desert",
 		SurfaceMaterial = Enum.Material.Sand,
 		FillMaterial    = Enum.Material.Sandstone,
-		DebugColor      = Color3.fromRGB(237, 201, 100),
-		Trees = false, Rocks = true, Bushes = false,
-		Structures = { "SandRuin", "Obelisk" },
+		DebugColor      = Color3.fromRGB(210, 180, 100),
+		Trees           = false,
+		Rocks           = true,
+		Bushes          = false,
+		Structures      = { "SandRuin", "Obelisk" },
 	},
 	Snow = {
 		Name            = "Snow",
 		SurfaceMaterial = Enum.Material.Snow,
 		FillMaterial    = Enum.Material.Glacier,
 		DebugColor      = Color3.fromRGB(220, 235, 255),
-		Trees = true, Rocks = true, Bushes = false,
-		Structures = { "Igloo", "IceSpike" },
+		Trees           = true,
+		Rocks           = false,
+		Bushes          = false,
+		Structures      = { "Igloo", "IceSpike" },
 	},
 	Grassland = {
 		Name            = "Grassland",
 		SurfaceMaterial = Enum.Material.Grass,
 		FillMaterial    = Enum.Material.Ground,
 		DebugColor      = Color3.fromRGB(124, 200, 80),
-		Trees = false, Rocks = false, Bushes = true,
-		Structures = { "Campfire" },
+		Trees           = false,
+		Rocks           = false,
+		Bushes          = true,
+		Structures      = { "Campfire" },
 	},
 	Jungle = {
 		Name            = "Jungle",
 		SurfaceMaterial = Enum.Material.Grass,
 		FillMaterial    = Enum.Material.Mud,
 		DebugColor      = Color3.fromRGB(0, 100, 20),
-		Trees = true, Rocks = true, Bushes = true,
-		Structures = { "JungleTemple", "Campfire" },
+		Trees           = true,
+		Rocks           = false,
+		Bushes          = true,
+		Structures      = { "JungleTemple", "Campfire" },
 	},
 	Tundra = {
 		Name            = "Tundra",
 		SurfaceMaterial = Enum.Material.Snow,
 		FillMaterial    = Enum.Material.Ground,
-		DebugColor      = Color3.fromRGB(180, 210, 230),
-		Trees = false, Rocks = true, Bushes = false,
-		Structures = { "IceSpike" },
+		DebugColor      = Color3.fromRGB(180, 200, 210),
+		Trees           = false,
+		Rocks           = true,
+		Bushes          = false,
+		Structures      = { "IceSpike" },
 	},
 	Volcano = {
 		Name            = "Volcano",
 		SurfaceMaterial = Enum.Material.Basalt,
 		FillMaterial    = Enum.Material.Basalt,
-		DebugColor      = Color3.fromRGB(180, 40, 10),
-		Trees = false, Rocks = true, Bushes = false,
-		Structures = { "LavaPillar", "AshRuin" },
+		DebugColor      = Color3.fromRGB(120, 30, 10),
+		Trees           = false,
+		Rocks           = true,
+		Bushes          = false,
+		Structures      = { "LavaPillar", "AshRuin" },
 	},
 	Swamp = {
 		Name            = "Swamp",
 		SurfaceMaterial = Enum.Material.Mud,
 		FillMaterial    = Enum.Material.Mud,
-		DebugColor      = Color3.fromRGB(70, 90, 50),
-		Trees = true, Rocks = false, Bushes = true,
-		Structures = { "WoodRuin", "Campfire" },
+		DebugColor      = Color3.fromRGB(60, 90, 50),
+		Trees           = true,
+		Rocks           = false,
+		Bushes          = true,
+		Structures      = { "WoodRuin", "Campfire" },
 	},
 	Ocean = {
 		Name            = "Ocean",
 		SurfaceMaterial = Enum.Material.Sand,
 		FillMaterial    = Enum.Material.Sand,
 		DebugColor      = Color3.fromRGB(30, 80, 180),
-		Trees = false, Rocks = false, Bushes = false,
-		Structures = {},
-	},
-}
-
--- ----------------------------------------------------------------
--- Ore vein definitions — spawned by OreGenerator module
--- MinY/MaxY: depth range; Threshold: noise rarity (lower = rarer)
--- Material: the Roblox Enum.Material to fill ore voxels with
--- ----------------------------------------------------------------
-WorldConfig.OreVeins = {
-	{
-		Name      = "Coal",
-		Material  = Enum.Material.Slate,
-		MinY      = -60, MaxY = -5,
-		Scale     = 20,
-		Threshold = 0.72,
-		SeedOffset = 10000,
-	},
-	{
-		Name      = "Iron",
-		Material  = Enum.Material.Cobblestone,
-		MinY      = -80, MaxY = -20,
-		Scale     = 18,
-		Threshold = 0.78,
-		SeedOffset = 20000,
-	},
-	{
-		Name      = "Gold",
-		Material  = Enum.Material.SmoothPlastic, -- replace with custom material
-		MinY      = -100, MaxY = -40,
-		Scale     = 15,
-		Threshold = 0.83,
-		SeedOffset = 30000,
-	},
-	{
-		Name      = "Diamond",
-		Material  = Enum.Material.Ice,           -- replace with custom material
-		MinY      = -120, MaxY = -60,
-		Scale     = 12,
-		Threshold = 0.88,
-		SeedOffset = 40000,
+		Trees           = false,
+		Rocks           = false,
+		Bushes          = false,
+		Structures      = {},
 	},
 }
 
