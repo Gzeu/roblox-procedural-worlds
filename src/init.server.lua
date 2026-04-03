@@ -1,12 +1,10 @@
 -- init.server.lua
--- Bootstrap entry point: loads all modules in dependency order
--- v6.0 | roblox-procedural-worlds
--- Phase 4: Monetization + Stability + Social
+-- Bootstrap entry point v6.1
+-- FIXES: WorldGenerator.Init (capital I), SeedPersistence.Load(), no double DayNight/Weather boot
 
 local Players = game:GetService("Players")
 
--- ── LAYER 0: Infrastructure (no deps) ─────────────────────────────
-
+-- ── LAYER 0: Infrastructure ───────────────────────────────────────────
 local EventBus            = require(script.Parent.EventBus)
 local WorldConfig         = require(script.Parent.WorldConfig)
 local DataStoreManager    = require(script.Parent.DataStoreManager)
@@ -15,7 +13,6 @@ local AntiExploit         = require(script.Parent.AntiExploit)
 local NotificationBridge  = require(script.Parent.NotificationBridge)
 
 -- ── LAYER 1: World Generation ─────────────────────────────────────
-
 local WorldGenerator   = require(script.Parent.WorldGenerator)
 local ChunkHandler     = require(script.Parent.ChunkHandler)
 local StreamingManager = require(script.Parent.StreamingManager)
@@ -25,7 +22,6 @@ local ChunkPredictor   = require(script.Parent.ChunkPredictor)
 local ObjectPool       = require(script.Parent.ObjectPool)
 
 -- ── LAYER 2: World Features ───────────────────────────────────────
-
 local AssetPlacer      = require(script.Parent.AssetPlacer)
 local StructurePlacer  = require(script.Parent.StructurePlacer)
 local OreGenerator     = require(script.Parent.OreGenerator)
@@ -37,7 +33,6 @@ local DayNightCycle    = require(script.Parent.DayNightCycle)
 local WeatherManager   = require(script.Parent.WeatherManager)
 
 -- ── LAYER 3: Player Systems ───────────────────────────────────────
-
 local Inventory           = require(script.Parent.Inventory)
 local PlayerPersistence   = require(script.Parent.PlayerPersistence)
 local QuestSystem         = require(script.Parent.QuestSystem)
@@ -50,7 +45,6 @@ local ParticleEffects     = require(script.Parent.ParticleEffects)
 local AdminPanel          = require(script.Parent.AdminPanel)
 
 -- ── LAYER 4: AI Systems ─────────────────────────────────────────
-
 local MobAI           = require(script.Parent.MobAI)
 local MobSpawner      = require(script.Parent.MobSpawner)
 local AINavigator     = require(script.Parent.AINavigator)
@@ -61,7 +55,6 @@ local AIMemory        = require(script.Parent.AIMemory)
 local AIGroupBehavior = require(script.Parent.AIGroupBehavior)
 
 -- ── LAYER 5: RPG + Economy ───────────────────────────────────────
-
 local SkillSystem     = require(script.Parent.SkillSystem)
 local BossEncounter   = require(script.Parent.BossEncounter)
 local NPCDialogue     = require(script.Parent.NPCDialogue)
@@ -73,19 +66,16 @@ local BaseBuilding    = require(script.Parent.BaseBuilding)
 local EconomyManager  = require(script.Parent.EconomyManager)
 local SeedShare       = require(script.Parent.SeedShare)
 
--- ── LAYER 6: Monetization + Social (Phase 4) ──────────────────
-
-local GamepassManager        = require(script.Parent.GamepassManager)
+-- ── LAYER 6: Monetization + Social ──────────────────────────────
+local GamepassManager         = require(script.Parent.GamepassManager)
 local DeveloperProductHandler = require(script.Parent.DeveloperProductHandler)
-local PremiumPerks           = require(script.Parent.PremiumPerks)
-local LeaderboardManager     = require(script.Parent.LeaderboardManager)
-local DailyRewards           = require(script.Parent.DailyRewards)
+local PremiumPerks            = require(script.Parent.PremiumPerks)
+local LeaderboardManager      = require(script.Parent.LeaderboardManager)
+local DailyRewards            = require(script.Parent.DailyRewards)
 
-print("[ProceduralWorlds] ╔══════════════════════════════╗")
-print("[ProceduralWorlds] ║  Initializing v6.0 (Phase 4)     ║")
-print("[ProceduralWorlds] ╚══════════════════════════════╝")
+print("[ProceduralWorlds] Initializing v6.1...")
 
--- ── BOOT SEQUENCE ──────────────────────────────────────────────────
+-- ── BOOT SEQUENCE ───────────────────────────────────────────────
 
 -- 1. Infrastructure
 DataStoreManager.Start()
@@ -97,34 +87,41 @@ PremiumPerks.Start()
 LeaderboardManager.Start()
 DailyRewards.Start()
 
--- 2. World seed
-local seed = SeedPersistence.loadSeed() or SeedPersistence.generateSeed()
+-- 2. Seed  (FIX: use .Load() and .Save() to match SeedPersistence API)
+local seed = SeedPersistence.Load()
+if not seed or seed == 0 then
+	seed = math.random(1, 2^31 - 1)
+	SeedPersistence.Save(seed)
+end
 print("[ProceduralWorlds] World seed: " .. tostring(seed))
-WorldGenerator.init(seed, WorldConfig)
 
--- 3. Seed sharing
+-- 3. World generation  (FIX: capital I — Lua is case-sensitive)
+WorldGenerator.Init(seed)
+
+-- 4. Seed sharing
 SeedShare.HookChatCommand({
 	seed       = seed,
-	noiseScale = WorldConfig.NOISE_SCALE   or 0.008,
-	seaLevel   = WorldConfig.SEA_LEVEL     or 40,
-	heightMult = WorldConfig.HEIGHT_MULT   or 120,
+	noiseScale = WorldConfig.NOISE_SCALE  or 0.008,
+	seaLevel   = WorldConfig.SEA_LEVEL    or 40,
+	heightMult = WorldConfig.HEIGHT_MULT  or 120,
 })
 
--- 4. Predictive streaming
+-- 5. Predictive streaming
 ChunkPredictor.Start(seed)
 
--- 5. Ambient systems
-DayNightCycle.start(WorldConfig.DAY_LENGTH_SECONDS)
-WeatherManager.start()
+-- 6. Faction system
 FactionSystem.Start()
 
--- 6. Waypoints
-TeleportManager.registerWaypoint("Spawn",    Vector3.new(0,     50,  0))
-TeleportManager.registerWaypoint("Market",   Vector3.new(300,   50,  0))
+-- NOTE: DayNightCycle, WeatherManager, MobSpawner, etc. are already
+-- started inside WorldGenerator.Init() — no duplicate calls needed.
+
+-- 7. Waypoints
+TeleportManager.registerWaypoint("Spawn",    Vector3.new(0,     50,    0))
+TeleportManager.registerWaypoint("Market",   Vector3.new(300,   50,    0))
 TeleportManager.registerWaypoint("Dungeon",  Vector3.new(-600,  30,  400))
 TeleportManager.registerWaypoint("Arena",    Vector3.new(800,   50, -200))
 TeleportManager.registerWaypoint("BossLair", Vector3.new(-1200, 30,  800))
-TeleportManager.registerWaypoint("Sanctum",  Vector3.new(1500,  60,  1500))
+TeleportManager.registerWaypoint("Sanctum",  Vector3.new(1500,  60, 1500))
 
 -- ── EVENT BUS HOOKS ──────────────────────────────────────────────
 
@@ -162,18 +159,15 @@ EventBus.on("Boss:Enraged", function(bossModel)
 end)
 
 EventBus.on("Boss:Defeated", function(bossModel, killerPlayer)
-	print(string.format("[BossEncounter] %s defeated by %s!",
-		bossModel.Name, killerPlayer and killerPlayer.Name or "unknown"))
+	print(string.format("[BossEncounter] %s defeated by %s!", bossModel.Name, killerPlayer and killerPlayer.Name or "unknown"))
 	if killerPlayer and killerPlayer:IsA("Player") then
-		local xp  = bossModel:GetAttribute("XPReward") or (WorldConfig.BOSS_BASE_XP or 500)
+		local xp     = bossModel:GetAttribute("XPReward") or (WorldConfig.BOSS_BASE_XP or 500)
 		local scaled = PremiumPerks.ScaleXP(killerPlayer, xp)
 		SkillSystem.awardXP(killerPlayer, scaled)
 		AwakenSystem.grantEnergy(killerPlayer, bossModel:GetAttribute("AwakenEnergyReward") or 40)
-		-- Leaderboard
 		local kills = (killerPlayer:GetAttribute("BossKills") or 0) + 1
 		killerPlayer:SetAttribute("BossKills", kills)
 		LeaderboardManager.OnBossKill(killerPlayer, kills)
-		-- Notification
 		NotificationBridge.Notify(killerPlayer, {
 			category = "SYSTEM",
 			title    = "🐲 Boss Defeated!",
@@ -184,9 +178,7 @@ EventBus.on("Boss:Defeated", function(bossModel, killerPlayer)
 end)
 
 EventBus.on("Boss:Spawned", function(bossModel, spawnPos)
-	if spawnPos then
-		NotificationBridge.BossSpawn(spawnPos, bossModel.Name)
-	end
+	if spawnPos then NotificationBridge.BossSpawn(spawnPos, bossModel.Name) end
 end)
 
 EventBus.on("SkillSystem:LevelUp", function(player, newLevel)
@@ -212,47 +204,38 @@ EventBus.on("NPCDialogue:QuestCompleted", function(player, questId)
 	end
 end)
 
-EventBus.on("Chunk:Explored", function(player, totalChunks)
-	LeaderboardManager.OnChunkExplored(player, totalChunks)
-end)
-
-EventBus.on("Economy:Purchased", function(buyer, listingId, quantity, total)
+EventBus.on("Chunk:Explored",    function(player, totalChunks) LeaderboardManager.OnChunkExplored(player, totalChunks) end)
+EventBus.on("Economy:Purchased", function(buyer, _, _, total)
 	local totalGold = (buyer:GetAttribute("TotalGoldEarned") or 0) + total
 	buyer:SetAttribute("TotalGoldEarned", totalGold)
 	LeaderboardManager.OnGoldEarned(buyer, totalGold)
 end)
-
 EventBus.on("FactionSystem:Conquered", function(player, cx, cz, newFactionId)
 	FactionSystem.ConquerChunk(cx, cz, newFactionId, player)
 end)
 
 if WorldConfig.EVENT_BUS_DEBUG then
 	EventBus.on("MobAI:StateChanged",     function(m, p, n) print(string.format("[MobAI] %s: %s -> %s", m.Name or "?", p, n)) end)
-	EventBus.on("FightingStyles:Changed", function(p, s) print(string.format("[FightingStyles] %s -> %s", p.Name, s)) end)
-	EventBus.on("AwakenSystem:Activated", function(p, s) print(string.format("[AwakenSystem] %s activated %s", p.Name, s)) end)
-	EventBus.on("ClanSystem:Assigned",    function(p, c) print(string.format("[ClanSystem] %s -> clan %s", p.Name, c)) end)
+	EventBus.on("FightingStyles:Changed", function(p, s)    print(string.format("[FightingStyles] %s -> %s", p.Name, s)) end)
+	EventBus.on("AwakenSystem:Activated", function(p, s)    print(string.format("[AwakenSystem] %s activated %s", p.Name, s)) end)
+	EventBus.on("ClanSystem:Assigned",    function(p, c)    print(string.format("[ClanSystem] %s -> clan %s", p.Name, c)) end)
 end
 
 -- ── PLAYER LIFECYCLE ─────────────────────────────────────────────
 
 Players.PlayerAdded:Connect(function(player)
-	-- Core data first
 	DataStoreManager.Load(player)
 	PlayerPersistence.onJoin(player)
-	-- Systems
 	QuestSystem.initPlayer(player)
 	SkillSystem.getStats(player)
 	ClanSystem.initPlayer(player)
 	FightingStyles.initPlayer(player)
 	AwakenSystem.initPlayer(player)
 	EconomyManager.initPlayer(player)
-	-- Phase 4
-	FactionSystem.Start()  -- idempotent
-	-- Daily reward check (async)
 	task.spawn(function()
 		task.wait(3)
 		local info = DailyRewards.GetInfo(player)
-		if info.canClaim then
+		if info and info.canClaim then
 			NotificationBridge.DailyReady(player, info.nextDay)
 		end
 	end)
@@ -265,8 +248,4 @@ Players.PlayerRemoving:Connect(function(player)
 	EventBus.emit("Player:Left", player)
 end)
 
-print("[ProceduralWorlds] v6.0 ready.")
-print("[ProceduralWorlds] Modules: DataStore, AntiExploit, NotificationBridge,")
-print("[ProceduralWorlds]          Gamepasses, DevProducts, PremiumPerks,")
-print("[ProceduralWorlds]          Leaderboards, DailyRewards, ChunkPredictor,")
-print("[ProceduralWorlds]          FactionSystem, ProceduralQuestGen, SeedShare.")
+print("[ProceduralWorlds] v6.1 ready — world generation active.")
