@@ -1,253 +1,117 @@
---!strict
--- ============================================================
--- MODULE: FactionSystem
--- Territory-based faction system:
---   - Factions claim chunks → passive income via EconomyManager
---   - Player reputation per faction (ally/neutral/enemy)
---   - Chunk ownership tracked on a global map
---   - Attack/defend events trigger BossEncounter hooks
--- v1.0.0 | roblox-procedural-worlds
--- ============================================================
+-- FactionSystem.lua
+-- Player faction membership, reputation, inter-faction relations & perks
+-- v2.5.0
 
-local Players           = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local WorldConfig       = require(ReplicatedStorage:WaitForChild("WorldConfig"))
-
+local WorldConfig = require(script.Parent.WorldConfig)
 local FactionSystem = {}
 
--- ── Faction Definitions ──────────────────────────────────────────
+local Players = game:GetService("Players")
 
-export type Faction = {
-	id:          string,
-	name:        string,
-	color:       Color3,
-	biomes:      { string },       -- preferred biomes
-	passiveIncome: number,         -- gold/min per owned chunk
-	startRep:    number,           -- default reputation (0–100)
-	enemy:       { string },       -- faction ids that are hostile by default
+-- ── Config ─────────────────────────────────────────────────────────
+local FACTIONS = WorldConfig.FACTIONS or {
+	{ id="Ironclad",    displayName="Ironclad Guard",  alignment="Lawful"  },
+	{ id="WildHunters", displayName="Wild Hunters",     alignment="Neutral" },
+	{ id="ShadowCult",  displayName="Shadow Cult",      alignment="Chaotic" },
+	{ id="MerchantGuild",displayName="Merchant Guild",  alignment="Neutral" },
 }
 
-local FACTIONS: { Faction } = {
-	{
-		id           = "iron_veil",
-		name         = "Iron Veil",
-		color        = Color3.fromRGB(120, 140, 160),
-		biomes       = { "Tundra", "Taiga" },
-		passiveIncome = 2,
-		startRep     = 50,
-		enemy        = { "ember_cult" },
-	},
-	{
-		id           = "ember_cult",
-		name         = "Ember Cult",
-		color        = Color3.fromRGB(200, 80, 40),
-		biomes       = { "Volcanic", "Desert" },
-		passiveIncome = 3,
-		startRep     = 30,
-		enemy        = { "iron_veil", "verdant_circle" },
-	},
-	{
-		id           = "verdant_circle",
-		name         = "Verdant Circle",
-		color        = Color3.fromRGB(60, 160, 80),
-		biomes       = { "Forest", "Jungle", "Swamp" },
-		passiveIncome = 2,
-		startRep     = 50,
-		enemy        = { "ember_cult" },
-	},
-	{
-		id           = "tide_syndicate",
-		name         = "Tide Syndicate",
-		color        = Color3.fromRGB(40, 120, 200),
-		biomes       = { "Ocean", "Swamp", "Grassland" },
-		passiveIncome = 4,
-		startRep     = 40,
-		enemy        = {},
-	},
+-- Relation matrix: factionId -> factionId -> "Allied"|"Hostile"|"Neutral"
+local RELATIONS = WorldConfig.FACTION_RELATIONS or {
+	Ironclad    = { WildHunters="Neutral", ShadowCult="Hostile",  MerchantGuild="Allied"  },
+	WildHunters = { Ironclad="Neutral",    ShadowCult="Neutral",  MerchantGuild="Neutral" },
+	ShadowCult  = { Ironclad="Hostile",    WildHunters="Neutral", MerchantGuild="Hostile" },
+	MerchantGuild={ Ironclad="Allied",     WildHunters="Neutral", ShadowCult="Hostile"   },
 }
 
--- ── State ────────────────────────────────────────────────────────
+local REP_THRESHOLDS = {
+	{ min=-1000, max=-500, rank="Exiled"    },
+	{ min=-499,  max=-1,   rank="Hostile"   },
+	{ min=0,     max=499,  rank="Neutral"   },
+	{ min=500,   max=1499, rank="Friendly"  },
+	{ min=1500,  max=2999, rank="Honored"   },
+	{ min=3000,  max=5000, rank="Exalted"   },
+}
 
--- chunkOwnership["cx,cz"] = factionId
-local chunkOwnership: { [string]: string } = {}
+-- ── State ──────────────────────────────────────────────────────────
+local playerData = {}  -- [userId] = { faction=id|nil, reputation={ [factionId]=number } }
 
--- playerRep[userId][factionId] = 0–100
-local playerRep: { [number]: { [string]: number } } = {}
-
--- factionTreasury[factionId] = accumulated gold
-local factionTreasury: { [string]: number } = {}
-
-local INCOME_TICK = 60  -- seconds between income ticks
-
--- ── Helpers ──────────────────────────────────────────────────────
-
-local function chunkKey(cx: number, cz: number): string
-	return cx .. "," .. cz
+-- ── Helpers ────────────────────────────────────────────────────────
+local function newData()
+	local rep = {}
+	for _, f in FACTIONS do rep[f.id] = 0 end
+	return { faction=nil, reputation=rep }
 end
 
-local function getFaction(id: string): Faction?
-	for _, f in ipairs(FACTIONS) do
-		if f.id == id then return f end
+local function getRank(rep)
+	for _, tier in REP_THRESHOLDS do
+		if rep >= tier.min and rep <= tier.max then return tier.rank end
 	end
-	return nil
+	return "Neutral"
 end
 
-local function initPlayerRep(userId: number)
-	if playerRep[userId] then return end
-	playerRep[userId] = {}
-	for _, f in ipairs(FACTIONS) do
-		playerRep[userId][f.id] = f.startRep
-	end
+-- ── Public API ─────────────────────────────────────────────────────
+function FactionSystem.RegisterPlayer(player)
+	playerData[player.UserId] = newData()
 end
 
--- ── Territory ────────────────────────────────────────────────────
-
---- Assign a chunk to a faction (called by WorldGenerator on world gen).
-function FactionSystem.ClaimChunk(cx: number, cz: number, factionId: string)
-	chunkOwnership[chunkKey(cx, cz)] = factionId
+function FactionSystem.UnregisterPlayer(player)
+	playerData[player.UserId] = nil
 end
 
---- Get the faction that owns a given chunk (nil = unclaimed).
-function FactionSystem.GetChunkOwner(cx: number, cz: number): Faction?
-	local id = chunkOwnership[chunkKey(cx, cz)]
-	if not id then return nil end
-	return getFaction(id)
-end
-
---- Return how many chunks a faction owns.
-function FactionSystem.GetTerritoryCount(factionId: string): number
-	local count = 0
-	for _, ownerId in pairs(chunkOwnership) do
-		if ownerId == factionId then count += 1 end
-	end
-	return count
-end
-
---- Transfer a chunk's ownership (player conquered territory).
-function FactionSystem.ConquerChunk(cx: number, cz: number, newFactionId: string, conqueredBy: Player?)
-	local key     = chunkKey(cx, cz)
-	local oldId   = chunkOwnership[key]
-	chunkOwnership[key] = newFactionId
-
-	-- Rep consequences
-	if conqueredBy then
-		local userId = conqueredBy.UserId
-		initPlayerRep(userId)
-		-- Gain rep with new faction, lose with old
-		if newFactionId then
-			FactionSystem.AdjustRep(userId, newFactionId, 10)
-		end
-		if oldId then
-			FactionSystem.AdjustRep(userId, oldId, -15)
+---Assigns player to a faction.
+function FactionSystem.JoinFaction(player, factionId)
+	local d = playerData[player.UserId]
+	if not d then return false, "no_data" end
+	for _, f in FACTIONS do
+		if f.id == factionId then
+			d.faction = factionId
+			return true, "ok"
 		end
 	end
-
+	return false, "unknown_faction"
 end
 
--- ── Reputation ───────────────────────────────────────────────────
-
-export type RepStatus = "Ally" | "Friendly" | "Neutral" | "Unfriendly" | "Enemy"
-
-local function repToStatus(rep: number): RepStatus
-	if rep >= 80 then return "Ally"
-	elseif rep >= 60 then return "Friendly"
-	elseif rep >= 35 then return "Neutral"
-	elseif rep >= 15 then return "Unfriendly"
-	else return "Enemy"
-	end
+---Changes reputation with a faction.
+function FactionSystem.ChangeReputation(player, factionId, delta)
+	local d = playerData[player.UserId]
+	if not d or not d.reputation[factionId] then return end
+	d.reputation[factionId] = math.clamp(
+		d.reputation[factionId] + delta, -1000, 5000
+	)
 end
 
---- Adjust a player's reputation with a faction.
-function FactionSystem.AdjustRep(userId: number, factionId: string, delta: number)
-	initPlayerRep(userId)
-	local current = playerRep[userId][factionId] or 50
-	playerRep[userId][factionId] = math.clamp(current + delta, 0, 100)
+function FactionSystem.GetReputation(player, factionId)
+	local d = playerData[player.UserId]
+	if not d then return 0 end
+	return d.reputation[factionId] or 0
 end
 
---- Get a player's numeric reputation with a faction.
-function FactionSystem.GetRep(userId: number, factionId: string): number
-	initPlayerRep(userId)
-	return playerRep[userId][factionId] or 50
+function FactionSystem.GetRank(player, factionId)
+	return getRank(FactionSystem.GetReputation(player, factionId))
 end
 
---- Get a player's status label with a faction.
-function FactionSystem.GetStatus(userId: number, factionId: string): RepStatus
-	return repToStatus(FactionSystem.GetRep(userId, factionId))
+function FactionSystem.GetRelation(factionA, factionB)
+	if factionA == factionB then return "Allied" end
+	return (RELATIONS[factionA] and RELATIONS[factionA][factionB]) or "Neutral"
 end
 
---- Get all faction reputations for a player.
-function FactionSystem.GetAllReps(userId: number): { [string]: { rep: number, status: RepStatus } }
-	initPlayerRep(userId)
-	local result = {}
-	for factionId, rep in pairs(playerRep[userId]) do
-		result[factionId] = { rep = rep, status = repToStatus(rep) }
-	end
-	return result
+function FactionSystem.GetPlayerFaction(player)
+	local d = playerData[player.UserId]
+	return d and d.faction
 end
 
--- ── Passive Income ───────────────────────────────────────────────
-
-local function runIncomeTick()
-	for _, faction in ipairs(FACTIONS) do
-		local territory = FactionSystem.GetTerritoryCount(faction.id)
-		local income    = territory * faction.passiveIncome
-		factionTreasury[faction.id] = (factionTreasury[faction.id] or 0) + income
-	end
-end
-
---- Get a faction's current treasury balance.
-function FactionSystem.GetTreasury(factionId: string): number
-	return factionTreasury[factionId] or 0
-end
-
--- ── World Init ───────────────────────────────────────────────────
-
---- Auto-assign chunks to factions based on biome during world gen.
---- Call this after ChunkHandler generates each chunk.
-function FactionSystem.AutoClaimFromBiome(cx: number, cz: number, biomeName: string)
-	for _, faction in ipairs(FACTIONS) do
-		for _, b in ipairs(faction.biomes) do
-			if b == biomeName then
-				FactionSystem.ClaimChunk(cx, cz, faction.id)
-				return
-			end
-		end
-	end
-end
-
---- Get all faction definitions.
-function FactionSystem.GetAll(): { Faction }
+function FactionSystem.GetAll()
 	return FACTIONS
 end
 
---- Get a single faction by id.
-function FactionSystem.Get(id: string): Faction?
-	return getFaction(id)
-end
-
--- ── Lifecycle ────────────────────────────────────────────────────
-
-function FactionSystem.Start()
-	-- Init rep for players already in game
-	for _, player in ipairs(Players:GetPlayers()) do
-		initPlayerRep(player.UserId)
+function FactionSystem.Init()
+	Players.PlayerAdded:Connect(FactionSystem.RegisterPlayer)
+	Players.PlayerRemoving:Connect(FactionSystem.UnregisterPlayer)
+	for _, p in Players:GetPlayers() do
+		FactionSystem.RegisterPlayer(p)
 	end
-
-	Players.PlayerAdded:Connect(function(player)
-		initPlayerRep(player.UserId)
-	end)
-
-	Players.PlayerRemoving:Connect(function(player)
-		playerRep[player.UserId] = nil
-	end)
-
-	-- Passive income loop
-	task.spawn(function()
-		while true do
-			task.wait(INCOME_TICK)
-			runIncomeTick()
-		end
-	end)
 end
+
+function FactionSystem.Start() end
 
 return FactionSystem

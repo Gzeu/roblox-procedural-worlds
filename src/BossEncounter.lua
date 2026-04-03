@@ -1,326 +1,190 @@
 -- BossEncounter.lua
--- Boss encounters with multi-phase HP thresholds, enrage timer, special attacks
--- v4.0 | roblox-procedural-worlds
+-- Spawns, manages phases, loot drops and cleanup for world boss encounters
+-- v2.7.0
 
-local RunService = game:GetService("RunService")
-local Players    = game:GetService("Players")
-local EventBus   = require(script.Parent.EventBus)
 local WorldConfig = require(script.Parent.WorldConfig)
-
+local LootTable   = require(script.Parent.LootTable)
 local BossEncounter = {}
-BossEncounter.__index = BossEncounter
 
--- ── Phase definitions ────────────────────────────────────────────
--- Each phase activates when hp drops below hpPct threshold
--- Phases listed from highest HP to lowest (first = 100%, last = enrage)
-local BOSS_PRESETS = {
-	DragonBoss = {
-		maxHP        = 5000,
-		baseXP       = 1000,
-		enrageTime   = 180,   -- seconds until enrage regardless of HP
-		phases = {
-			{
-				hpPct   = 1.0,
-				name    = "Resting",
-				damageScale  = 1.0,
-				speedScale   = 1.0,
-				specialAttack = "FireBreath",
-				attackCooldown = 4.0,
-			},
-			{
-				hpPct   = 0.70,
-				name    = "Wounded",
-				damageScale  = 1.3,
-				speedScale   = 1.1,
-				specialAttack = "WingSlam",
-				attackCooldown = 3.0,
-			},
-			{
-				hpPct   = 0.40,
-				name    = "Enraged",
-				damageScale  = 1.8,
-				speedScale   = 1.3,
-				specialAttack = "TailWhip",
-				attackCooldown = 2.0,
-			},
-			{
-				hpPct   = 0.15,
-				name    = "Berserker",
-				damageScale  = 2.5,
-				speedScale   = 1.5,
-				specialAttack = "MeteorRain",
-				attackCooldown = 1.5,
-			},
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
+local Workspace   = game:GetService("Workspace")
+
+-- ── Config ─────────────────────────────────────────────────────────
+local BOSS_CATALOGUE = WorldConfig.BOSSES or {
+	{
+		id          = "TerrorGolem",
+		displayName = "Terror Golem",
+		minLevel    = 15,
+		maxHp       = 5000,
+		phases      = {
+			{ hpThreshold=1.0, dmgMult=1.0,  speed=14, ability="Smash"     },
+			{ hpThreshold=0.6, dmgMult=1.4,  speed=18, ability="RockShower" },
+			{ hpThreshold=0.3, dmgMult=2.0,  speed=22, ability="Berserk"    },
 		},
+		rewardXP    = 2000,
+		lootId      = "BossChest",
+		spawnBiomes = { "Volcanic", "Tundra" },
 	},
-	TrollKing = {
-		maxHP        = 2000,
-		baseXP       = 400,
-		enrageTime   = 120,
-		phases = {
-			{
-				hpPct   = 1.0,
-				name    = "Calm",
-				damageScale  = 1.0,
-				speedScale   = 1.0,
-				specialAttack = "GroundSlam",
-				attackCooldown = 3.5,
-			},
-			{
-				hpPct   = 0.60,
-				name    = "Angered",
-				damageScale  = 1.5,
-				speedScale   = 1.2,
-				specialAttack = "RockThrow",
-				attackCooldown = 2.5,
-			},
-			{
-				hpPct   = 0.25,
-				name    = "Frenzy",
-				damageScale  = 2.2,
-				speedScale   = 1.4,
-				specialAttack = "BoulderBarrage",
-				attackCooldown = 1.8,
-			},
+	{
+		id          = "SwampWitch",
+		displayName = "Swamp Witch",
+		minLevel    = 20,
+		maxHp       = 3500,
+		phases      = {
+			{ hpThreshold=1.0, dmgMult=1.0,  speed=12, ability="CurseAura"  },
+			{ hpThreshold=0.5, dmgMult=1.6,  speed=15, ability="SummonToads" },
+			{ hpThreshold=0.25,dmgMult=2.2,  speed=18, ability="DeathWail"  },
 		},
+		rewardXP    = 1800,
+		lootId      = "WitchRelics",
+		spawnBiomes = { "Swamp", "Jungle" },
 	},
 }
 
--- ── Special attack handlers ──────────────────────────────────────
--- Each handler receives (bossInstance, nearbyPlayers)
-local SpecialAttacks = {}
+-- ── State ──────────────────────────────────────────────────────────
+local activeBosses  = {}  -- [bossId] = { model, hp, phaseIndex, engaged }
+local spawnCooldown = {}  -- [bossId] = nextSpawnTime (os.clock)
 
-SpecialAttacks.FireBreath = function(boss, players)
-	local root = boss.model:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	for _, p in ipairs(players) do
-		if p.Character then
-			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and (hrp.Position - root.Position).Magnitude <= 35 then
-				local hum = p.Character:FindFirstChildOfClass("Humanoid")
-				if hum then
-					hum:TakeDamage(math.floor(boss:getCurrentDamage() * 0.8))
+local RESPAWN_DELAY = WorldConfig.BOSS_RESPAWN_DELAY or 600  -- 10 min
+
+-- ── Helpers ────────────────────────────────────────────────────────
+local function getBossDef(id)
+	for _, b in BOSS_CATALOGUE do if b.id == id then return b end end
+	return nil
+end
+
+local function currentPhase(def, hp)
+	local ratio = hp / def.maxHp
+	local bestPhase = def.phases[1]
+	for _, phase in def.phases do
+		if ratio <= phase.hpThreshold then
+			bestPhase = phase
+		end
+	end
+	return bestPhase
+end
+
+-- ── Public API ─────────────────────────────────────────────────────
+
+---Triggers a boss encounter at the given CFrame.
+---@param bossId string
+---@param spawnCF CFrame
+function BossEncounter.Spawn(bossId, spawnCF)
+	if activeBosses[bossId] then
+		if WorldConfig.Debug then warn("[Boss] Already active:", bossId) end
+		return false
+	end
+	local def = getBossDef(bossId)
+	if not def then return false end
+	local now = os.clock()
+	if spawnCooldown[bossId] and now < spawnCooldown[bossId] then
+		return false
+	end
+
+	-- Build a placeholder model (replaced by real asset via AssetPlacer in production)
+	local model = Instance.new("Model")
+	model.Name  = def.displayName
+	local root  = Instance.new("Part")
+	root.Name   = "HumanoidRootPart"
+	root.Size   = Vector3.new(6, 8, 6)
+	root.CFrame = spawnCF
+	root.Anchored = false
+	root.Parent = model
+	local hum   = Instance.new("Humanoid")
+	hum.MaxHealth = def.maxHp
+	hum.Health    = def.maxHp
+	hum.Parent    = model
+	model.Parent  = Workspace
+
+	activeBosses[bossId] = {
+		model      = model,
+		hp         = def.maxHp,
+		phaseIndex = 1,
+		engaged    = false,
+		def        = def,
+	}
+
+	-- Death handler
+	hum.Died:Connect(function()
+		BossEncounter._OnDeath(bossId)
+	end)
+
+	if WorldConfig.Debug then
+		warn("[Boss] Spawned", def.displayName, "at", tostring(spawnCF.Position))
+	end
+	return true
+end
+
+function BossEncounter._OnDeath(bossId)
+	local record = activeBosses[bossId]
+	if not record then return end
+	local def = record.def
+
+	-- Drop loot for all nearby players
+	local bossPos = record.model.PrimaryPart
+					and record.model.PrimaryPart.Position
+					or Vector3.new(0, 0, 0)
+	for _, player in Players:GetPlayers() do
+		if player.Character then
+			local rootPart = player.Character:FindFirstChild("HumanoidRootPart")
+			if rootPart and (rootPart.Position - bossPos).Magnitude < 200 then
+				local drops = LootTable.Roll(def.lootId, 1)
+				if WorldConfig.Debug then
+					warn("[Boss] Loot for", player.Name, ":", drops)
 				end
-				EventBus.emit("BossEncounter:SpecialHit", boss.model, p, "FireBreath")
 			end
 		end
 	end
+
+	-- Cleanup
+	record.model:Destroy()
+	activeBosses[bossId] = nil
+	spawnCooldown[bossId] = os.clock() + RESPAWN_DELAY
 end
 
-SpecialAttacks.WingSlam = function(boss, players)
-	local root = boss.model:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	for _, p in ipairs(players) do
-		if p.Character then
-			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and (hrp.Position - root.Position).Magnitude <= 20 then
-				local hum = p.Character:FindFirstChildOfClass("Humanoid")
-				if hum then
-					hum:TakeDamage(math.floor(boss:getCurrentDamage() * 1.4))
-					-- knockback via BodyVelocity
-					local bv = Instance.new("BodyVelocity")
-					bv.Velocity = (hrp.Position - root.Position).Unit * 80
-						+ Vector3.new(0, 30, 0)
-					bv.MaxForce = Vector3.new(1e5,1e5,1e5)
-					bv.Parent = hrp
-					task.delay(0.25, function() bv:Destroy() end)
-				end
-				EventBus.emit("BossEncounter:SpecialHit", boss.model, p, "WingSlam")
-			end
-		end
+---Deals damage to a boss. Handles phase transitions.
+function BossEncounter.DamageBoss(bossId, damage)
+	local record = activeBosses[bossId]
+	if not record then return end
+	local hum = record.model:FindFirstChildOfClass("Humanoid")
+	if not hum then return end
+	hum:TakeDamage(damage)
+	record.hp = hum.Health
+	-- Phase check
+	local phase = currentPhase(record.def, record.hp)
+	if WorldConfig.Debug then
+		warn("[Boss]", bossId, "HP:", record.hp, "Phase ability:", phase.ability)
 	end
 end
 
-SpecialAttacks.GroundSlam = function(boss, players)
-	local root = boss.model:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	for _, p in ipairs(players) do
-		if p.Character then
-			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and (hrp.Position - root.Position).Magnitude <= 25 then
-				local hum = p.Character:FindFirstChildOfClass("Humanoid")
-				if hum then hum:TakeDamage(boss:getCurrentDamage()) end
-				EventBus.emit("BossEncounter:SpecialHit", boss.model, p, "GroundSlam")
-			end
-		end
-	end
+function BossEncounter.GetActiveBosses()
+	return activeBosses
 end
 
-SpecialAttacks.RockThrow = function(boss, players)
-	local root = boss.model:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-	for _, p in ipairs(players) do
-		if p.Character then
-			local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and (hrp.Position - root.Position).Magnitude <= 60 then
-				local hum = p.Character:FindFirstChildOfClass("Humanoid")
-				if hum then hum:TakeDamage(math.floor(boss:getCurrentDamage() * 0.6)) end
-				EventBus.emit("BossEncounter:SpecialHit", boss.model, p, "RockThrow")
-			end
-		end
-	end
+function BossEncounter.Init()
 end
 
--- Fallback for unimplemented specials
-local function getSpecialHandler(name)
-	return SpecialAttacks[name] or function(boss, players)
-		-- Generic AoE
-		local root = boss.model:FindFirstChild("HumanoidRootPart")
-		if not root then return end
-		for _, p in ipairs(players) do
-			if p.Character then
-				local hrp = p.Character:FindFirstChild("HumanoidRootPart")
-				if hrp and (hrp.Position - root.Position).Magnitude <= 30 then
-					local hum = p.Character:FindFirstChildOfClass("Humanoid")
-					if hum then hum:TakeDamage(boss:getCurrentDamage()) end
+function BossEncounter.Start()
+	-- Heartbeat: mark bosses as engaged when players are within range
+	RunService.Heartbeat:Connect(function()
+		for bossId, record in activeBosses do
+			if not record.model or not record.model.Parent then
+				activeBosses[bossId] = nil
+				continue
+			end
+			local root = record.model:FindFirstChild("HumanoidRootPart")
+			if not root then continue end
+			for _, player in Players:GetPlayers() do
+				if player.Character then
+					local pr = player.Character:FindFirstChild("HumanoidRootPart")
+					if pr and (pr.Position - root.Position).Magnitude < 150 then
+						record.engaged = true
+					end
 				end
 			end
-		end
-	end
-end
-
--- ── Constructor ──────────────────────────────────────────────────
-function BossEncounter.new(model, presetName)
-	local preset = BOSS_PRESETS[presetName]
-	if not preset then
-		warn("[BossEncounter] Unknown preset: " .. tostring(presetName))
-		preset = BOSS_PRESETS.DragonBoss
-	end
-
-	local self = setmetatable({}, BossEncounter)
-	self.model        = model
-	self.preset       = preset
-	self.hp           = preset.maxHP
-	self.maxHP        = preset.maxHP
-	self.phaseIndex   = 1
-	self.startTime    = os.clock()
-	self.enraged      = false
-	self.isAlive      = true
-	self.lastSpecial  = 0
-	self.baseDamage   = WorldConfig.BOSS_BASE_DAMAGE or 40
-	self._connections = {}
-
-	model:SetAttribute("IsBoss",    true)
-	model:SetAttribute("BossPreset", presetName)
-	model:SetAttribute("XPReward",  preset.baseXP)
-
-	return self
-end
-
--- ── Current phase ────────────────────────────────────────────────
-function BossEncounter:getCurrentPhase()
-	local phases = self.preset.phases
-	local hpPct  = self.hp / self.maxHP
-	local current = phases[1]
-	for _, phase in ipairs(phases) do
-		if hpPct <= phase.hpPct then
-			current = phase
-		end
-	end
-	return current
-end
-
-function BossEncounter:getCurrentDamage()
-	local phase = self:getCurrentPhase()
-	local scale = phase.damageScale * (self.enraged and 1.5 or 1.0)
-	return math.floor(self.baseDamage * scale)
-end
-
--- ── Phase transition ─────────────────────────────────────────────
-function BossEncounter:checkPhaseTransition()
-	local hpPct = self.hp / self.maxHP
-	local phases = self.preset.phases
-	for i = #phases, 2, -1 do
-		if hpPct <= phases[i].hpPct and self.phaseIndex < i then
-			self.phaseIndex = i
-			EventBus.emit("BossEncounter:PhaseChange", self.model, i, phases[i].name)
-			if WorldConfig.EVENT_BUS_DEBUG then
-				warn(string.format("[BossEncounter] %s entered phase %d: %s",
-					self.model.Name, i, phases[i].name))
-			end
-			return
-		end
-	end
-end
-
--- ── Take damage ──────────────────────────────────────────────────
-function BossEncounter:takeDamage(amount, attacker)
-	if not self.isAlive then return end
-	self.hp = math.max(0, self.hp - amount)
-	self:checkPhaseTransition()
-	EventBus.emit("BossEncounter:Damaged", self.model, amount, self.hp, self.maxHP)
-
-	if self.hp <= 0 then
-		self.isAlive = false
-		self:stop()
-		EventBus.emit("BossEncounter:Defeated", self.model, attacker)
-	end
-end
-
--- ── Main loop ────────────────────────────────────────────────────
-function BossEncounter:start()
-	local conn = RunService.Heartbeat:Connect(function(dt)
-		if not self.isAlive then return end
-
-		local now  = os.clock()
-		local root = self.model:FindFirstChild("HumanoidRootPart")
-		if not root or not root.Parent then self:stop(); return end
-
-		-- Enrage timer
-		if not self.enraged and now - self.startTime >= self.preset.enrageTime then
-			self.enraged = true
-			EventBus.emit("BossEncounter:Enraged", self.model)
-			if WorldConfig.EVENT_BUS_DEBUG then
-				warn("[BossEncounter] " .. self.model.Name .. " has ENRAGED!")
-			end
-		end
-
-		-- Special attack tick
-		local phase   = self:getCurrentPhase()
-		local cooldown = phase.attackCooldown * (self.enraged and 0.6 or 1.0)
-		if now - self.lastSpecial >= cooldown then
-			self.lastSpecial = now
-			local nearby = Players:GetPlayers()
-			local handler = getSpecialHandler(phase.specialAttack)
-			task.spawn(handler, self, nearby)
-			EventBus.emit("BossEncounter:SpecialAttack",
-				self.model, phase.specialAttack, phase.name)
 		end
 	end)
-	table.insert(self._connections, conn)
 end
 
-function BossEncounter:stop()
-	for _, c in ipairs(self._connections) do c:Disconnect() end
-	self._connections = {}
-end
-
--- ── Static spawn helper ──────────────────────────────────────────
-function BossEncounter.spawn(position, presetName)
-	local model = Instance.new("Model")
-	model.Name  = presetName or "Boss"
-
-	local part  = Instance.new("Part")
-	part.Size        = Vector3.new(6, 8, 6)
-	part.BrickColor  = BrickColor.new("Dark red")
-	part.Anchored    = false
-	part.CFrame      = CFrame.new(position + Vector3.new(0, 4, 0))
-	part.Name        = "HumanoidRootPart"
-	part.Parent      = model
-
-	local hum = Instance.new("Humanoid")
-	local preset = BOSS_PRESETS[presetName or "DragonBoss"]
-	hum.MaxHealth = preset and preset.maxHP or 5000
-	hum.Health    = hum.MaxHealth
-	hum.Parent    = model
-
-	model.Parent = workspace
-
-	local boss = BossEncounter.new(model, presetName or "DragonBoss")
-	boss:start()
-	EventBus.emit("BossEncounter:Spawned", model, presetName)
-	return boss
-end
-
-BossEncounter.PRESETS = BOSS_PRESETS
 return BossEncounter

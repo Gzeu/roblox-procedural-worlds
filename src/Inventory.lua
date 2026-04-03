@@ -1,128 +1,130 @@
 -- Inventory.lua
--- Per-player item inventory with equip, add, remove, and persistence via attributes
+-- Per-player item inventory with stacking, equip slot, and persistence hooks
 -- v2.4.0
 
-local Players     = game:GetService("Players")
 local WorldConfig = require(script.Parent.WorldConfig)
-
 local Inventory = {}
 
--- { [userId] = { slots = { {name, qty, equipped} ... } } }
-local playerInventories = {}
+local Players = game:GetService("Players")
 
-local MAX_SLOTS = WorldConfig.Inventory.MaxSlots or 20
+-- ── State ──────────────────────────────────────────────────────────
+local inventories  = {}  -- [userId] = { slots = {}, equipped = {} }
+local MAX_STACK    = 99
 
-local function getInv(player)
-	local uid = player.UserId
-	if not playerInventories[uid] then
-		playerInventories[uid] = { slots = {} }
+-- ── Helpers ────────────────────────────────────────────────────────
+local function newInventory()
+	local slots = {}
+	for i = 1, WorldConfig.INVENTORY_SLOTS do
+		slots[i] = { item = nil, qty = 0 }
 	end
-	return playerInventories[uid]
+	return { slots = slots, equipped = {} }
 end
 
--- Serialise inventory to a player attribute (simple string, max 200 chars)
-local function syncAttributes(player)
-	local inv = getInv(player)
-	for i, slot in ipairs(inv.slots) do
-		player:SetAttribute("Inv_" .. i .. "_Name",    slot.name)
-		player:SetAttribute("Inv_" .. i .. "_Qty",     slot.qty)
-		player:SetAttribute("Inv_" .. i .. "_Equipped",slot.equipped or false)
-	end
-	player:SetAttribute("InvSlots", #inv.slots)
-end
-
-function Inventory.AddItem(player, itemName, qty)
-	local inv = getInv(player)
-	qty = qty or 1
-
-	-- Stack into existing slot
-	for _, slot in ipairs(inv.slots) do
-		if slot.name == itemName then
-			slot.qty = slot.qty + qty
-			syncAttributes(player)
-			return true
+local function findSlot(inv, itemName)
+	for _, slot in inv.slots do
+		if slot.item == itemName and slot.qty < MAX_STACK then
+			return slot
 		end
 	end
+	return nil
+end
 
-	-- New slot
-	if #inv.slots >= MAX_SLOTS then
-		warn("[Inventory] Full for", player.Name)
-		return false
+local function findEmptySlot(inv)
+	for _, slot in inv.slots do
+		if slot.item == nil then return slot end
 	end
+	return nil
+end
 
-	table.insert(inv.slots, { name = itemName, qty = qty, equipped = false })
-	syncAttributes(player)
+-- ── Public API ─────────────────────────────────────────────────────
+function Inventory.RegisterPlayer(player)
+	inventories[player.UserId] = newInventory()
+end
+
+function Inventory.UnregisterPlayer(player)
+	inventories[player.UserId] = nil
+end
+
+---Adds qty of itemName to player's inventory.
+---@return number  leftover quantity that didn't fit
+function Inventory.AddItem(player, itemName, qty)
+	local inv = inventories[player.UserId]
+	if not inv then return qty end
+	local remaining = qty
+	while remaining > 0 do
+		local slot = findSlot(inv, itemName) or findEmptySlot(inv)
+		if not slot then break end
+		if slot.item == nil then
+			slot.item = itemName
+			slot.qty  = 0
+		end
+		local canAdd = math.min(remaining, MAX_STACK - slot.qty)
+		slot.qty   += canAdd
+		remaining  -= canAdd
+	end
+	return remaining
+end
+
+---Removes qty of itemName from player's inventory.
+---@return boolean  true if fully removed
+function Inventory.RemoveItem(player, itemName, qty)
+	local inv = inventories[player.UserId]
+	if not inv then return false end
+	-- count total
+	local total = 0
+	for _, slot in inv.slots do
+		if slot.item == itemName then total += slot.qty end
+	end
+	if total < qty then return false end
+	local remaining = qty
+	for _, slot in inv.slots do
+		if slot.item == itemName and remaining > 0 then
+			local take = math.min(slot.qty, remaining)
+			slot.qty   -= take
+			remaining  -= take
+			if slot.qty == 0 then slot.item = nil end
+		end
+	end
 	return true
 end
 
-function Inventory.RemoveItem(player, itemName, qty)
-	local inv = getInv(player)
-	qty = qty or 1
-
-	for i, slot in ipairs(inv.slots) do
-		if slot.name == itemName then
-			slot.qty = slot.qty - qty
-			if slot.qty <= 0 then
-				table.remove(inv.slots, i)
-			end
-			syncAttributes(player)
-			return true
-		end
+---Returns total count of itemName in inventory.
+function Inventory.CountItem(player, itemName)
+	local inv = inventories[player.UserId]
+	if not inv then return 0 end
+	local total = 0
+	for _, slot in inv.slots do
+		if slot.item == itemName then total += slot.qty end
 	end
-	return false
+	return total
 end
 
-function Inventory.EquipItem(player, itemName)
-	local inv = getInv(player)
-	local weaponCfg = WorldConfig.Inventory.Weapons[itemName]
-
-	-- Unequip all first
-	for _, slot in ipairs(inv.slots) do
-		slot.equipped = false
-	end
-
-	for _, slot in ipairs(inv.slots) do
-		if slot.name == itemName then
-			slot.equipped = true
-			-- Apply weapon stats to player attributes for CombatSystem
-			if weaponCfg then
-				player:SetAttribute("WeaponDamage", weaponCfg.damage)
-				player:SetAttribute("WeaponRange",  weaponCfg.range)
-				player:SetAttribute("EquippedItem", itemName)
-			end
-			syncAttributes(player)
-			return true
-		end
-	end
-	return false
+---Equips an item to a named slot (e.g. "Weapon", "Helmet").
+function Inventory.Equip(player, slotName, itemName)
+	local inv = inventories[player.UserId]
+	if not inv then return end
+	inv.equipped[slotName] = itemName
 end
 
-function Inventory.GetSlots(player)
-	return getInv(player).slots
+---Returns snapshot of inventory for persistence.
+function Inventory.Serialize(player)
+	return inventories[player.UserId]
 end
 
-function Inventory.Has(player, itemName)
-	for _, slot in ipairs(getInv(player).slots) do
-		if slot.name == itemName then return true, slot.qty end
-	end
-	return false, 0
+---Restores inventory from persisted data.
+function Inventory.Deserialize(player, data)
+	if not data then return end
+	inventories[player.UserId] = data
 end
 
--- Give loot table result directly to player
-function Inventory.GiveLoot(player, lootList)
-	for _, item in ipairs(lootList) do
-		Inventory.AddItem(player, item.name, item.qty)
+function Inventory.Init()
+	Players.PlayerAdded:Connect(Inventory.RegisterPlayer)
+	Players.PlayerRemoving:Connect(Inventory.UnregisterPlayer)
+	for _, p in Players:GetPlayers() do
+		Inventory.RegisterPlayer(p)
 	end
 end
 
-function Inventory.Start()
-	Players.PlayerRemoving:Connect(function(player)
-		playerInventories[player.UserId] = nil
-	end)
-
-	if WorldConfig.Debug then
-		warn("[Inventory] Started")
-	end
-end
+function Inventory.Start() end
 
 return Inventory

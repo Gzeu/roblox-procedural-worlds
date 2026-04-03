@@ -1,71 +1,67 @@
 # Changelog
 
-All notable changes to **roblox-procedural-worlds** are documented here.
-
-Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
-Versioning: [Semantic Versioning](https://semver.org/)
+All notable changes to this project will be documented in this file.
+Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
-## [5.0.0] - 2026-04-03
+## [2.7.0] — 2026-04-03
 
 ### Added
-- **FightingStyles.lua** — Anime RPG combat layer with unlockable styles (`Warrior`, `Rogue`, `Mystic`, `Berserker`), combo chains (up to 5 hits, per-style combo scaling), a 0–100 stance meter, crit and dodge adjustments, and `buildAttackProfile()` that returns per-hit modifiers for the combat pipeline.
-- **AwakenSystem.lua** — Three-stage transformation system (`Burst` lv10, `Ascended` lv25, `Mythic` lv50). Players accumulate `AwakenEnergy` (0–100) from kills then activate a timed buff state (damage, speed, maxHP, crit). Auto-expires with cooldown.
-- **ClanSystem.lua** — Weighted clan roll at first join: `Ironfang` (Common 50%), `Moonveil` (Rare 28%), `Stormcall` (Epic 15%), `Sunbreaker` (Legendary 7%). Each clan provides passive stat bonuses via `getPassiveBonuses()`. Clan name written as a Player Attribute.
-- **RunModifiers.lua** — Roguelite boon/curse system scoped per dungeon/arena run. Weighted auto-roll of 5 boons and 5 curses. `getPlayerEffects()` merges all active modifiers into one effect table. Clean teardown via `endRun()`.
-- **BaseBuilding.lua** — 4-stud snap-grid placement, per-player limit (100), minimum spacing collision (6 studs), owner attribute tags, `serializePlayerBuilds()` / `loadPlayerBuilds()` for DataStore persistence, fallback Part model when template is missing.
-- **EconomyManager.lua** — Player gold wallet (default 250g, synced as Player Attribute) with `addGold`/`removeGold` and a server-side listing market (`createListing`, `cancelListing`, `purchaseListing`). Inventory-module agnostic with graceful fallback.
-
-### Changed
-- `init.server.lua` — v5.0: loads all six new modules, adds `Sanctum` waypoint. `PlayerAdded` initialises clan, fighting style, awaken and economy. Boss kills grant XP + awaken energy. Mob kills grant awaken energy. Level-up milestones auto-unlock styles (Rogue @5, Mystic @10, Berserker @20).
-- `CHANGELOG.md` — Added v5.0.0 section.
+- **BossEncounter** — multi-phase world boss system with loot drops, respawn cooldown, and proximity engagement detection
 
 ---
 
-## [4.0.0] - 2026-04-03
+## [2.6.0] — 2026-04-03
 
 ### Added
-- **AIMemory.lua** — Per-mob persistent memory: last target, observed positions (FIFO 5), aggression cooldown.
-- **AIGroupBehavior.lua** — Pack coordination: alert leader, flanker, retreat signaler with dynamic role assignment.
-- **SkillSystem.lua** — XP → level → skill points → 4 attributes (Strength, Agility, Intelligence, Endurance).
-- **BossEncounter.lua** — HP-threshold phase transitions, enrage timer, phase-specific special attacks.
-- **NPCDialogue.lua** v2 — Branching dialogue tree, per-session choice history, quest integration hooks.
-
-### Changed
-- `init.server.lua` — v4.0: loads all five modules, adds `BossLair` waypoint, connects boss/dialogue/skill hooks.
+- **EconomyManager** — per-player Gold balance, shop buy/sell, player-to-player transfer, DataStore persistence
+- **SkillSystem** — XP/leveling engine, skill tree (active + passive), cooldown tracking, skill point allocation
 
 ---
 
-## [3.0.0] - 2026-04-03
+## [2.5.0] — 2026-04-03
 
 ### Added
-- **MobAI.lua** — FSM: Idle → Patrol → Alert → Chase → Attack → Flee → Dead.
-- **AINavigator.lua** — PathfindingService wrapper with straight-line fallback.
-- **BehaviorTree.lua** — Composable BT engine: Sequence, Selector, Parallel, Condition, Action, Inverter, Repeater, Cooldown, Tree.
-- **AIDirector.lua** — Per-player Dynamic Difficulty Adjustment with 6 tiers (Trivial → Nightmare).
-- **AIConfig.lua** — Per-mob config table + Aggressive/Passive BT presets.
+- **FactionSystem** — 4 factions, reputation tiers, inter-faction relation matrix, join/leave API
+- **CraftingSystem** — recipe-based crafting with Inventory integration, level requirements
+- **ClanSystem** — player-created clans, invite/leave, clan XP & level, leader management
+- **DailyRewards** — 7-day streak table, DataStore-backed claim tracking, bonus items on key days
+
+### Updated
+- `rojo/default.project.json` — registered all 9 new modules
+- `WorldConfig.lua` — added config keys for v2.5–v2.7 systems (economy, skills, bosses, crafting, clans, daily rewards)
 
 ---
 
-## [2.5.0] - 2026-04-03
+## [2.4.0] — Previous
 
 ### Added
-- EventBus, CraftingSystem, TeleportManager, ParticleEffects. Two new biomes, ore, mob.
-
-### Fixed
-- Chunk unload thrashing bug. SeedPersistence fallback.
+- CombatSystem — melee/ranged/magic damage, status effects DoT loop
+- Inventory — slot-based inventory with stacking and equip slots
+- NPCDialogue — branching dialogue trees
+- DayNightCycle — Lighting-driven day/night with configurable hour speed
 
 ---
 
-## [2.0.0] - 2025-12-10
+## [2.3.0] — Previous
 
 ### Added
-- RiverCarver, VillageGenerator, DungeonGenerator, CombatSystem, QuestSystem, NPCDialogue, AdminPanel, LODManager, StreamingManager.
+- QuestSystem — dynamic quest tracking
+- AdminPanel — runtime world controls
+- LODManager — multi-level terrain detail
 
 ---
 
-## [1.0.0] - 2025-09-01
+## [2.2.0] — Previous
 
 ### Added
-- Procedural terrain, biome system, chunk loading, asset placement, ore generation, day/night cycle, weather, inventory, persistence, mob spawner, loot tables.
+- MobSpawner — biome-aware mob spawning
+- LootTable — weighted loot rolls
+
+---
+
+## [2.0.0] — Initial
+
+### Added
+- Core procedural world: chunks, biomes, ores, rivers, dungeons, weather, seed persistence, streaming

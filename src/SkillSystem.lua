@@ -1,164 +1,116 @@
 -- SkillSystem.lua
--- RPG attribute system: XP → LevelUp → SkillPoints → 4 attributes
--- Attributes: Strength, Agility, Intelligence, Endurance
--- v4.0 | roblox-procedural-worlds
+-- XP gain, level-up, skill tree (active + passive), cooldown tracking
+-- v2.6.0
 
-local Players    = game:GetService("Players")
-local EventBus   = require(script.Parent.EventBus)
 local WorldConfig = require(script.Parent.WorldConfig)
-
 local SkillSystem = {}
 
--- ── XP curve: XP needed for level N = BASE * N^EXPONENT ─────────
-local XP_BASE     = 100
-local XP_EXPONENT = 1.45
-local MAX_LEVEL   = 100
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
--- ── Attribute bonuses per point ─────────────────────────────────
--- Strength:     +2 melee damage, +5 carry weight
--- Agility:      +0.5 move speed, +3% dodge chance cap
--- Intelligence: +5% XP gain bonus, +2 magic damage
--- Endurance:    +10 max HP, +1 HP regen per 10s
-local ATTR_BONUSES = {
-	Strength     = { meleeDamage = 2,   carryWeight = 5    },
-	Agility      = { moveSpeed   = 0.5, dodgeChance = 0.03 },
-	Intelligence = { xpBonus     = 0.05,magicDamage = 2    },
-	Endurance    = { maxHP       = 10,  hpRegen     = 1    },
+-- ── Config ─────────────────────────────────────────────────────────
+local MAX_LEVEL        = WorldConfig.MAX_PLAYER_LEVEL or 50
+local XP_BASE          = WorldConfig.XP_BASE          or 100   -- XP for level 1
+local XP_EXPONENT      = WorldConfig.XP_EXPONENT       or 1.4
+local SKILL_POINTS_PER = WorldConfig.SKILL_POINTS_PER  or 1
+
+-- Skill catalogue
+local SKILLS = WorldConfig.SKILLS or {
+	{ id="Swordsmanship", type="Passive", maxRank=5, statBonus={ meleeDmg=0.08 } },
+	{ id="Archery",       type="Passive", maxRank=5, statBonus={ rangedDmg=0.10 } },
+	{ id="Toughness",     type="Passive", maxRank=5, statBonus={ maxHp=20 } },
+	{ id="Fireball",      type="Active",  maxRank=3, cooldown=6,  manaCost=25 },
+	{ id="Blink",         type="Active",  maxRank=3, cooldown=12, manaCost=40 },
+	{ id="Heal",          type="Active",  maxRank=3, cooldown=18, manaCost=35 },
 }
 
--- ── Per-player data ──────────────────────────────────────────────
--- { level, xp, skillPoints, attributes = {S,A,I,E}, bonuses = {} }
-local playerData = {}
+-- ── State ──────────────────────────────────────────────────────────
+local profiles    = {}  -- [userId] = { xp, level, skillPoints, ranks, cooldowns }
 
-local function initData()
-	return {
-		level       = 1,
-		xp          = 0,
-		xpToNext    = XP_BASE,
-		skillPoints = 0,
-		attributes  = {
-			Strength     = 0,
-			Agility      = 0,
-			Intelligence = 0,
-			Endurance    = 0,
-		},
-		bonuses = {
-			meleeDamage  = 0,
-			carryWeight  = 0,
-			moveSpeed    = 0,
-			dodgeChance  = 0,
-			xpBonus      = 0,
-			magicDamage  = 0,
-			maxHP        = 0,
-			hpRegen      = 0,
-		},
-	}
-end
-
-local function xpForLevel(level)
+-- ── Helpers ────────────────────────────────────────────────────────
+local function xpRequired(level)
 	return math.floor(XP_BASE * (level ^ XP_EXPONENT))
 end
 
-local function recomputeBonuses(data)
-	for bonus in pairs(data.bonuses) do
-		data.bonuses[bonus] = 0
-	end
-	for attr, points in pairs(data.attributes) do
-		local bonusTable = ATTR_BONUSES[attr]
-		if bonusTable then
-			for bonus, perPoint in pairs(bonusTable) do
-				data.bonuses[bonus] = (data.bonuses[bonus] or 0) + perPoint * points
-			end
+local function newProfile()
+	local ranks = {}
+	for _, sk in SKILLS do ranks[sk.id] = 0 end
+	return { xp=0, level=1, skillPoints=0, ranks=ranks, cooldowns={} }
+end
+
+local function findSkill(id)
+	for _, s in SKILLS do if s.id == id then return s end end
+	return nil
+end
+
+-- ── Public API ─────────────────────────────────────────────────────
+function SkillSystem.RegisterPlayer(player)
+	profiles[player.UserId] = newProfile()
+end
+
+function SkillSystem.UnregisterPlayer(player)
+	profiles[player.UserId] = nil
+end
+
+---Awards XP; handles level-ups.
+function SkillSystem.AwardXP(player, amount)
+	local prof = profiles[player.UserId]
+	if not prof then return end
+	if prof.level >= MAX_LEVEL then return end
+	prof.xp += amount
+	while prof.level < MAX_LEVEL and prof.xp >= xpRequired(prof.level) do
+		prof.xp    -= xpRequired(prof.level)
+		prof.level += 1
+		prof.skillPoints += SKILL_POINTS_PER
+		if WorldConfig.Debug then
+			warn("[SkillSystem]", player.Name, "leveled up to", prof.level)
 		end
 	end
 end
 
--- ── Public API ───────────────────────────────────────────────────
-
-function SkillSystem.getStats(player)
-	local uid = player.UserId
-	if not playerData[uid] then
-		playerData[uid] = initData()
-	end
-	return playerData[uid]
+---Invests one skill point into skillId. Returns success, reason.
+function SkillSystem.UpgradeSkill(player, skillId)
+	local prof = profiles[player.UserId]
+	if not prof then return false, "no_profile" end
+	local sk = findSkill(skillId)
+	if not sk then return false, "unknown_skill" end
+	if prof.skillPoints < 1 then return false, "no_points" end
+	if prof.ranks[skillId] >= sk.maxRank then return false, "max_rank" end
+	prof.skillPoints -= 1
+	prof.ranks[skillId] += 1
+	return true, "ok"
 end
 
-function SkillSystem.awardXP(player, amount)
-	local data = SkillSystem.getStats(player)
-	-- Apply intelligence XP bonus
-	local bonus = 1 + data.bonuses.xpBonus
-	local earned = math.floor(amount * bonus)
-	data.xp = data.xp + earned
-	EventBus.emit("SkillSystem:XPGained", player, earned, data.xp)
+---Activates an active skill. Returns success, reason.
+function SkillSystem.UseSkill(player, skillId)
+	local prof = profiles[player.UserId]
+	if not prof then return false, "no_profile" end
+	local sk = findSkill(skillId)
+	if not sk or sk.type ~= "Active" then return false, "not_active" end
+	if prof.ranks[skillId] < 1 then return false, "not_learned" end
+	local now = os.clock()
+	local ready = prof.cooldowns[skillId] or 0
+	if now < ready then return false, "on_cooldown" end
+	prof.cooldowns[skillId] = now + (sk.cooldown or 0)
+	return true, "ok"
+end
 
-	-- Level up loop
-	while data.xp >= data.xpToNext and data.level < MAX_LEVEL do
-		data.xp       = data.xp - data.xpToNext
-		data.level    = data.level + 1
-		data.xpToNext = xpForLevel(data.level)
-		data.skillPoints = data.skillPoints + WorldConfig.SKILL_POINTS_PER_LEVEL
-		EventBus.emit("SkillSystem:LevelUp", player, data.level, data.skillPoints)
-		if WorldConfig.EVENT_BUS_DEBUG then
-			warn(string.format("[SkillSystem] %s → Level %d (+%d SP)",
-				player.Name, data.level, WorldConfig.SKILL_POINTS_PER_LEVEL))
-		end
+function SkillSystem.GetProfile(player)
+	return profiles[player.UserId]
+end
+
+function SkillSystem.GetSkillCatalogue()
+	return SKILLS
+end
+
+function SkillSystem.Init()
+	Players.PlayerAdded:Connect(SkillSystem.RegisterPlayer)
+	Players.PlayerRemoving:Connect(SkillSystem.UnregisterPlayer)
+	for _, p in Players:GetPlayers() do
+		SkillSystem.RegisterPlayer(p)
 	end
 end
 
-function SkillSystem.spendPoint(player, attribute)
-	local data = SkillSystem.getStats(player)
-	if data.skillPoints <= 0 then
-		return false, "No skill points available"
-	end
-	if not ATTR_BONUSES[attribute] then
-		return false, "Unknown attribute: " .. tostring(attribute)
-	end
-	local cap = WorldConfig.SKILL_ATTRIBUTE_CAP or 50
-	if data.attributes[attribute] >= cap then
-		return false, "Attribute at cap"
-	end
-	data.skillPoints             = data.skillPoints - 1
-	data.attributes[attribute]   = data.attributes[attribute] + 1
-	recomputeBonuses(data)
-	EventBus.emit("SkillSystem:PointSpent", player, attribute, data.attributes[attribute])
-	return true
-end
-
-function SkillSystem.getBonus(player, bonusKey)
-	local data = SkillSystem.getStats(player)
-	return data.bonuses[bonusKey] or 0
-end
-
-function SkillSystem.getLevel(player)
-	return SkillSystem.getStats(player).level
-end
-
-function SkillSystem.getXPProgress(player)
-	local data = SkillSystem.getStats(player)
-	return data.xp, data.xpToNext, data.level
-end
-
--- ── Hook: award XP on mob kill via EventBus ──────────────────────
-EventBus.on("MobAI:Died", function(mobModel, killer)
-	if killer and killer:IsA("Player") then
-		local xpAmount = mobModel:GetAttribute("XPReward") or
-			(WorldConfig.MOB_BASE_XP or 20)
-		SkillSystem.awardXP(killer, xpAmount)
-	end
-end)
-
--- ── Hook: award XP on boss kill ──────────────────────────────────
-EventBus.on("BossEncounter:Defeated", function(bossModel, killer)
-	if killer and killer:IsA("Player") then
-		local xpAmount = bossModel:GetAttribute("XPReward") or
-			(WorldConfig.BOSS_BASE_XP or 500)
-		SkillSystem.awardXP(killer, xpAmount)
-	end
-end)
-
--- ── Cleanup ──────────────────────────────────────────────────────
-Players.PlayerRemoving:Connect(function(player)
-	playerData[player.UserId] = nil
-end)
+function SkillSystem.Start() end
 
 return SkillSystem

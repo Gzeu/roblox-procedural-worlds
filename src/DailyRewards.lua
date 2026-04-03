@@ -1,138 +1,104 @@
---!strict
--- ============================================================
--- MODULE: DailyRewards
--- Daily login streak system.
--- Day 1: 50 coins   Day 2: 100   Day 3: 200
--- Day 4: 300 coins  Day 5: 500   Day 6: 750
--- Day 7: 1000 coins + Legendary item
--- Streak resets if player misses >24 hours since last claim.
--- v1.0.0 | roblox-procedural-worlds
--- ============================================================
+-- DailyRewards.lua
+-- Streak-based daily reward system with escalating rewards
+-- v2.5.0
 
-local DataStoreService = game:GetService("DataStoreService")
-local Players          = game:GetService("Players")
-
+local WorldConfig = require(script.Parent.WorldConfig)
 local DailyRewards = {}
 
-local STORE = DataStoreService:GetDataStore("DailyRewards_v1")
+local Players          = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
 
-local STREAK_REWARDS: { { coins: number, item: string? } } = {
-	{ coins = 50  },
-	{ coins = 100 },
-	{ coins = 200 },
-	{ coins = 300 },
-	{ coins = 500 },
-	{ coins = 750 },
-	{ coins = 1000, item = "Legendary" },
+local DailyStore = DataStoreService:GetDataStore("DailyRewardsV1")
+
+-- ── Config ─────────────────────────────────────────────────────────
+local STREAK_TABLE = WorldConfig.DAILY_REWARD_STREAK or {
+	-- day = { gold, xp, bonus? }
+	[1]  = { gold=50,   xp=100 },
+	[2]  = { gold=60,   xp=120 },
+	[3]  = { gold=75,   xp=150 },
+	[4]  = { gold=90,   xp=180 },
+	[5]  = { gold=110,  xp=220, bonus="HealthPotion" },
+	[6]  = { gold=130,  xp=260 },
+	[7]  = { gold=200,  xp=500, bonus="MagicCrystal" },
 }
+local MAX_STREAK    = 7
+local RESET_SECONDS = 86400  -- 24 h
 
-local RESET_WINDOW = 86400 * 2  -- 48 hours grace window before streak resets
-
-export type StreakData = {
-	streak:    number,
-	lastClaim: number,  -- os.time()
-}
-
--- ── DataStore Helpers ─────────────────────────────────────────────
-
-local function loadStreak(userId: number): StreakData
-	local ok, data = pcall(STORE.GetAsync, STORE, tostring(userId))
-	if ok and data then return data end
-	return { streak = 0, lastClaim = 0 }
+-- ── Helpers ────────────────────────────────────────────────────────
+local function loadData(uid)
+	local ok, data = pcall(function()
+		return DailyStore:GetAsync("daily_" .. uid)
+	end)
+	return (ok and data) or { streak=0, lastClaim=0 }
 end
 
-local function saveStreak(userId: number, data: StreakData)
-	pcall(STORE.SetAsync, STORE, tostring(userId), data)
+local function saveData(uid, data)
+	pcall(function()
+		DailyStore:SetAsync("daily_" .. uid, data)
+	end)
 end
 
--- ── Claim Logic ────────────────────────────────────────────────────
+-- ── Public API ─────────────────────────────────────────────────────
 
-export type ClaimResult = {
-	success:   boolean,
-	coins:     number,
-	item:      string?,
-	streak:    number,
-	nextReset: number,  -- seconds until streak resets
-	message:   string,
-}
-
---- Attempt to claim today's reward. Returns ClaimResult.
-function DailyRewards.Claim(player: Player): ClaimResult
-	local userId = player.UserId
-	local data   = loadStreak(userId)
-	local now    = os.time()
-	local elapsed = now - data.lastClaim
+---Attempts to claim today's reward.
+---@return boolean, table|string  claimed, reward or reason
+function DailyRewards.Claim(player)
+	local uid  = player.UserId
+	local data = loadData(uid)
+	local now  = os.time()
 
 	-- Already claimed today?
-	if elapsed < 86400 then
-		return {
-			success   = false,
-			coins     = 0,
-			streak    = data.streak,
-			nextReset = 86400 - elapsed,
-			message   = string.format("Come back in %dh %dm!",
-				math.floor((86400 - elapsed) / 3600),
-				math.floor(((86400 - elapsed) % 3600) / 60)),
-		}
+	if (now - data.lastClaim) < RESET_SECONDS then
+		local remaining = RESET_SECONDS - (now - data.lastClaim)
+		return false, { reason="already_claimed", cooldown=remaining }
 	end
 
-	-- Streak reset?
-	if elapsed > RESET_WINDOW then
+	-- Streak broken?
+	if (now - data.lastClaim) > (RESET_SECONDS * 2) then
 		data.streak = 0
 	end
 
-	data.streak    = (data.streak % #STREAK_REWARDS) + 1
+	data.streak = math.min(data.streak + 1, MAX_STREAK)
 	data.lastClaim = now
 
-	local reward = STREAK_REWARDS[data.streak]
+	local reward = STREAK_TABLE[data.streak] or STREAK_TABLE[MAX_STREAK]
 
-	-- Apply coins via EconomyManager if available
-	local ok, EconomyManager = pcall(require,
-		game:GetService("ReplicatedStorage"):WaitForChild("EconomyManager"))
-	if ok and EconomyManager then
-		EconomyManager.addBalance(player, reward.coins)
+	saveData(uid, data)
+
+	if WorldConfig.Debug then
+		warn("[DailyRewards]", player.Name, "claimed day", data.streak,
+			"| gold:", reward.gold, "xp:", reward.xp)
 	end
 
-	saveStreak(userId, data)
-
-	return {
-		success   = true,
-		coins     = reward.coins,
-		item      = reward.item,
-		streak    = data.streak,
-		nextReset = 86400,
-		message   = string.format("Day %d reward: %d coins%s!",
-			data.streak,
-			reward.coins,
-			reward.item and " + " .. reward.item or ""),
+	return true, {
+		streak   = data.streak,
+		gold     = reward.gold,
+		xp       = reward.xp,
+		bonus    = reward.bonus,
 	}
 end
 
---- Get streak info without claiming.
-function DailyRewards.GetInfo(player: Player): StreakData & { canClaim: boolean, nextDay: number }
-	local data    = loadStreak(player.UserId)
-	local elapsed = os.time() - data.lastClaim
+---Returns next claim info without claiming.
+function DailyRewards.GetStatus(player)
+	local data = loadData(player.UserId)
+	local now  = os.time()
+	local elapsed = now - data.lastClaim
 	return {
-		streak    = data.streak,
-		lastClaim = data.lastClaim,
-		canClaim  = elapsed >= 86400,
-		nextDay   = (data.streak % #STREAK_REWARDS) + 1,
+		streak      = data.streak,
+		canClaim    = elapsed >= RESET_SECONDS,
+		cooldown    = math.max(0, RESET_SECONDS - elapsed),
+		nextReward  = STREAK_TABLE[math.min(data.streak + 1, MAX_STREAK)],
 	}
 end
 
--- ── Lifecycle ────────────────────────────────────────────────────
-
-function DailyRewards.Start()
-	-- Auto-claim prompt on join (sets attribute; GUI reacts client-side)
+function DailyRewards.Init()
 	Players.PlayerAdded:Connect(function(player)
-		task.spawn(function()
-			task.wait(3)  -- wait for character + UI to load
-			local info = DailyRewards.GetInfo(player)
-			player:SetAttribute("DailyCanClaim", info.canClaim)
-			player:SetAttribute("DailyStreak",   info.streak)
-			player:SetAttribute("DailyNextDay",  info.nextDay)
-		end)
+		if WorldConfig.Debug then
+			warn("[DailyRewards] Player joined:", player.Name)
+		end
 	end)
 end
+
+function DailyRewards.Start() end
 
 return DailyRewards

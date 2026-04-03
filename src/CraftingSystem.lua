@@ -1,122 +1,104 @@
 -- CraftingSystem.lua
--- Recipe-based crafting with ingredient validation, output generation and EventBus integration
--- v2.5 | roblox-procedural-worlds
+-- Recipe-based crafting: validates ingredients, consumes from Inventory, outputs result
+-- v2.5.0
 
-local EventBus = require(script.Parent.EventBus)
-local Inventory = require(script.Parent.Inventory)
-
+local WorldConfig = require(script.Parent.WorldConfig)
 local CraftingSystem = {}
-CraftingSystem.__index = CraftingSystem
 
--- Recipe registry: { [recipeName] = { ingredients = {...}, output = {...}, requiredLevel = number } }
-local recipes = {
-	WoodenSword = {
-		ingredients = { Wood = 3, Stone = 1 },
-		output = { WoodenSword = 1 },
-		requiredLevel = 1,
-		description = "A basic sword made of wood and stone.",
+local Players = game:GetService("Players")
+
+-- ── Recipe catalogue ───────────────────────────────────────────────
+local RECIPES = WorldConfig.CRAFTING_RECIPES or {
+	{
+		id      = "IronSword",
+		inputs  = { { item="Iron", qty=3 }, { item="Coal", qty=1 } },
+		output  = { item="IronSword", qty=1 },
+		level   = 1,
 	},
-	HealthPotion = {
-		ingredients = { Herb = 2, Water = 1 },
-		output = { HealthPotion = 1 },
-		requiredLevel = 1,
-		description = "Restores 50 HP when consumed.",
+	{
+		id      = "HealthPotion",
+		inputs  = { { item="Herb", qty=2 }, { item="Water", qty=1 } },
+		output  = { item="HealthPotion", qty=2 },
+		level   = 1,
 	},
-	IronPickaxe = {
-		ingredients = { IronIngot = 3, Wood = 2 },
-		output = { IronPickaxe = 1 },
-		requiredLevel = 5,
-		description = "Mines ores twice as fast as a stone pickaxe.",
+	{
+		id      = "DiamondArmor",
+		inputs  = { { item="Diamond", qty=8 }, { item="IronSword", qty=2 } },
+		output  = { item="DiamondArmor", qty=1 },
+		level   = 10,
 	},
-	Torch = {
-		ingredients = { Wood = 1, Coal = 1 },
-		output = { Torch = 4 },
-		requiredLevel = 1,
-		description = "Illuminates dark dungeons. Lasts 5 in-game hours.",
-	},
-	StoneWall = {
-		ingredients = { Stone = 6 },
-		output = { StoneWall = 1 },
-		requiredLevel = 2,
-		description = "A solid stone wall segment for building.",
-	},
-	EnchantedArmor = {
-		ingredients = { IronIngot = 5, MagicCrystal = 2, Leather = 3 },
-		output = { EnchantedArmor = 1 },
-		requiredLevel = 15,
-		description = "Provides +25 defense and minor magic resistance.",
+	{
+		id      = "MagicStaff",
+		inputs  = { { item="MagicCrystal", qty=3 }, { item="Wood", qty=2 } },
+		output  = { item="MagicStaff", qty=1 },
+		level   = 8,
 	},
 }
 
--- Register a new recipe at runtime
-function CraftingSystem.registerRecipe(name, data)
-	assert(type(name) == "string", "Recipe name must be a string")
-	assert(data.ingredients and data.output, "Recipe must have ingredients and output")
-	recipes[name] = data
-	EventBus.emit("CraftingSystem:RecipeRegistered", name, data)
-end
+-- Lazy require Inventory to avoid circular deps
+local Inventory
 
--- Get all available recipes
-function CraftingSystem.getRecipes()
-	return recipes
-end
-
--- Get a single recipe by name
-function CraftingSystem.getRecipe(name)
-	return recipes[name]
-end
-
--- Check if a player can craft a recipe
--- @param player Player
--- @param recipeName string
--- @param playerLevel number
--- @returns boolean, string reason
-function CraftingSystem.canCraft(player, recipeName, playerLevel)
-	local recipe = recipes[recipeName]
-	if not recipe then
-		return false, "Unknown recipe: " .. tostring(recipeName)
+local function getInventory()
+	if not Inventory then
+		Inventory = require(script.Parent.Inventory)
 	end
+	return Inventory
+end
 
-	if playerLevel and recipe.requiredLevel and playerLevel < recipe.requiredLevel then
-		return false, "Requires level " .. recipe.requiredLevel
+-- ── Helpers ────────────────────────────────────────────────────────
+local function findRecipe(id)
+	for _, r in RECIPES do if r.id == id then return r end end
+	return nil
+end
+
+-- ── Public API ─────────────────────────────────────────────────────
+
+---Attempts to craft recipeId for player.
+---@param playerLevel number  current skill/craft level
+---@return boolean, string
+function CraftingSystem.Craft(player, recipeId, playerLevel)
+	local recipe = findRecipe(recipeId)
+	if not recipe then return false, "unknown_recipe" end
+	if (playerLevel or 0) < (recipe.level or 1) then
+		return false, "level_too_low"
 	end
-
-	for item, qty in pairs(recipe.ingredients) do
-		local has = Inventory.getItemCount(player, item)
-		if has < qty then
-			return false, "Not enough " .. item .. " (need " .. qty .. ", have " .. has .. ")"
+	local inv = getInventory()
+	-- Check all inputs
+	for _, req in recipe.inputs do
+		if inv.CountItem(player, req.item) < req.qty then
+			return false, "missing_" .. req.item
 		end
 	end
-
-	return true, "OK"
+	-- Consume inputs
+	for _, req in recipe.inputs do
+		inv.RemoveItem(player, req.item, req.qty)
+	end
+	-- Grant output
+	local leftover = inv.AddItem(player, recipe.output.item, recipe.output.qty)
+	if leftover > 0 and WorldConfig.Debug then
+		warn("[Crafting] Inventory full; dropped", leftover, recipe.output.item)
+	end
+	if WorldConfig.Debug then
+		warn("[Crafting]", player.Name, "crafted", recipe.output.qty, recipe.output.item)
+	end
+	return true, "ok"
 end
 
--- Attempt to craft a recipe for a player
--- @param player Player
--- @param recipeName string
--- @param playerLevel number
--- @returns boolean success, string message
-function CraftingSystem.craft(player, recipeName, playerLevel)
-	local ok, reason = CraftingSystem.canCraft(player, recipeName, playerLevel)
-	if not ok then
-		EventBus.emit("CraftingSystem:CraftFailed", player, recipeName, reason)
-		return false, reason
-	end
-
-	local recipe = recipes[recipeName]
-
-	-- Deduct ingredients
-	for item, qty in pairs(recipe.ingredients) do
-		Inventory.removeItem(player, item, qty)
-	end
-
-	-- Add output items
-	for item, qty in pairs(recipe.output) do
-		Inventory.addItem(player, item, qty)
-	end
-
-	EventBus.emit("CraftingSystem:CraftSuccess", player, recipeName, recipe.output)
-	return true, "Crafted " .. recipeName .. " successfully!"
+function CraftingSystem.GetRecipes()
+	return RECIPES
 end
+
+function CraftingSystem.GetRecipesForLevel(level)
+	local available = {}
+	for _, r in RECIPES do
+		if (r.level or 1) <= level then
+			table.insert(available, r)
+		end
+	end
+	return available
+end
+
+function CraftingSystem.Init() end
+function CraftingSystem.Start() end
 
 return CraftingSystem

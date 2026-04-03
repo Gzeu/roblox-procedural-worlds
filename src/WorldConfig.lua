@@ -1,6 +1,6 @@
 -- WorldConfig.lua
 -- Central configuration for the procedural world generator
--- v3.0 | roblox-procedural-worlds
+-- v3.1 | roblox-procedural-worlds
 
 local WorldConfig = {}
 
@@ -140,18 +140,149 @@ WorldConfig.PARTICLE_POOL_SIZE = 50
 -- ─────────────────────────────────────────────────────────────────
 -- v3.0 AI SETTINGS
 -- ─────────────────────────────────────────────────────────────────
-WorldConfig.EVENT_BUS_DEBUG         = false  -- verbose event logging
-WorldConfig.AI_ENABLED              = true   -- master switch for MobAI
-WorldConfig.AI_BEHAVIOR_TREE        = true   -- use BT engine vs raw FSM
-WorldConfig.AI_DIRECTOR_ENABLED     = true   -- dynamic difficulty adjustment
-WorldConfig.AI_DIRECTOR_DECAY_RATE  = 0.02   -- score regression per second
-WorldConfig.AI_PATHFINDING_COOLDOWN = 0.8    -- seconds between path recomputes
-WorldConfig.AI_DETECT_MULTIPLIER    = 1.0    -- global detect range scale
-WorldConfig.AI_DAMAGE_MULTIPLIER    = 1.0    -- global damage scale override
-
--- AIDirector difficulty tiers (matches AIDirector.lua TIERS)
-WorldConfig.AI_DIFFICULTY_TIERS = {
+WorldConfig.EVENT_BUS_DEBUG         = false
+WorldConfig.AI_ENABLED              = true
+WorldConfig.AI_BEHAVIOR_TREE        = true
+WorldConfig.AI_DIRECTOR_ENABLED     = true
+WorldConfig.AI_DIRECTOR_DECAY_RATE  = 0.02
+WorldConfig.AI_PATHFINDING_COOLDOWN = 0.8
+WorldConfig.AI_DETECT_MULTIPLIER    = 1.0
+WorldConfig.AI_DAMAGE_MULTIPLIER    = 1.0
+WorldConfig.AI_DIFFICULTY_TIERS     = {
 	"Trivial", "Easy", "Normal", "Hard", "Extreme", "Nightmare"
 }
+
+-- ─────────────────────────────────────────────────────────────────
+-- v2.5 — FACTIONS
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.FACTIONS = {
+	{ id="Ironclad",     displayName="Ironclad Guard",  alignment="Lawful"  },
+	{ id="WildHunters",  displayName="Wild Hunters",     alignment="Neutral" },
+	{ id="ShadowCult",   displayName="Shadow Cult",      alignment="Chaotic" },
+	{ id="MerchantGuild",displayName="Merchant Guild",   alignment="Neutral" },
+}
+WorldConfig.FACTION_RELATIONS = {
+	Ironclad     = { WildHunters="Neutral", ShadowCult="Hostile",  MerchantGuild="Allied"  },
+	WildHunters  = { Ironclad="Neutral",    ShadowCult="Neutral",  MerchantGuild="Neutral" },
+	ShadowCult   = { Ironclad="Hostile",    WildHunters="Neutral", MerchantGuild="Hostile" },
+	MerchantGuild= { Ironclad="Allied",     WildHunters="Neutral", ShadowCult="Hostile"   },
+}
+
+-- ─────────────────────────────────────────────────────────────────
+-- v2.5 — CLAN
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.MAX_CLAN_MEMBERS = 20
+
+-- ─────────────────────────────────────────────────────────────────
+-- v2.5 — DAILY REWARDS
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.DAILY_REWARD_STREAK = {
+	[1] = { gold=50,   xp=100 },
+	[2] = { gold=60,   xp=120 },
+	[3] = { gold=75,   xp=150 },
+	[4] = { gold=90,   xp=180 },
+	[5] = { gold=110,  xp=220, bonus="HealthPotion" },
+	[6] = { gold=130,  xp=260 },
+	[7] = { gold=200,  xp=500, bonus="MagicCrystal" },
+}
+
+-- ─────────────────────────────────────────────────────────────────
+-- v2.6 — ECONOMY
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.STARTING_GOLD = 100
+WorldConfig.SHOP_ITEMS = {
+	{ id="HealthPotion",  buy=30,  sell=12  },
+	{ id="IronSword",     buy=150, sell=60  },
+	{ id="MagicCrystal",  buy=500, sell=200 },
+	{ id="Coal",          buy=5,   sell=2   },
+	{ id="Gold",          buy=40,  sell=15  },
+	{ id="Diamond",       buy=800, sell=350 },
+}
+
+-- ─────────────────────────────────────────────────────────────────
+-- v2.6 — SKILLS
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.MAX_PLAYER_LEVEL = 50
+WorldConfig.XP_BASE          = 100
+WorldConfig.XP_EXPONENT      = 1.4
+WorldConfig.SKILL_POINTS_PER = 1
+WorldConfig.SKILLS = {
+	{ id="Swordsmanship", type="Passive", maxRank=5, statBonus={ meleeDmg=0.08 } },
+	{ id="Archery",       type="Passive", maxRank=5, statBonus={ rangedDmg=0.10 } },
+	{ id="Toughness",     type="Passive", maxRank=5, statBonus={ maxHp=20 } },
+	{ id="Fireball",      type="Active",  maxRank=3, cooldown=6,  manaCost=25 },
+	{ id="Blink",         type="Active",  maxRank=3, cooldown=12, manaCost=40 },
+	{ id="Heal",          type="Active",  maxRank=3, cooldown=18, manaCost=35 },
+}
+
+-- ─────────────────────────────────────────────────────────────────
+-- v2.7 — BOSSES
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.BOSS_RESPAWN_DELAY = 600  -- seconds
+WorldConfig.BOSSES = {
+	{
+		id          = "TerrorGolem",
+		displayName = "Terror Golem",
+		minLevel    = 15,
+		maxHp       = 5000,
+		phases      = {
+			{ hpThreshold=1.0, dmgMult=1.0, speed=14, ability="Smash"      },
+			{ hpThreshold=0.6, dmgMult=1.4, speed=18, ability="RockShower"  },
+			{ hpThreshold=0.3, dmgMult=2.0, speed=22, ability="Berserk"     },
+		},
+		rewardXP    = 2000,
+		lootId      = "BossChest",
+		spawnBiomes = { "Volcanic", "Tundra" },
+	},
+	{
+		id          = "SwampWitch",
+		displayName = "Swamp Witch",
+		minLevel    = 20,
+		maxHp       = 3500,
+		phases      = {
+			{ hpThreshold=1.0, dmgMult=1.0,  speed=12, ability="CurseAura"   },
+			{ hpThreshold=0.5, dmgMult=1.6,  speed=15, ability="SummonToads"  },
+			{ hpThreshold=0.25,dmgMult=2.2,  speed=18, ability="DeathWail"    },
+		},
+		rewardXP    = 1800,
+		lootId      = "WitchRelics",
+		spawnBiomes = { "Swamp", "Jungle" },
+	},
+}
+
+-- ─────────────────────────────────────────────────────────────────
+-- v2.5 — CRAFTING RECIPES
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.CRAFTING_RECIPES = {
+	{
+		id      = "IronSword",
+		inputs  = { { item="Iron", qty=3 }, { item="Coal", qty=1 } },
+		output  = { item="IronSword", qty=1 },
+		level   = 1,
+	},
+	{
+		id      = "HealthPotion",
+		inputs  = { { item="Herb", qty=2 }, { item="Water", qty=1 } },
+		output  = { item="HealthPotion", qty=2 },
+		level   = 1,
+	},
+	{
+		id      = "DiamondArmor",
+		inputs  = { { item="Diamond", qty=8 }, { item="IronSword", qty=2 } },
+		output  = { item="DiamondArmor", qty=1 },
+		level   = 10,
+	},
+	{
+		id      = "MagicStaff",
+		inputs  = { { item="MagicCrystal", qty=3 }, { item="Wood", qty=2 } },
+		output  = { item="MagicStaff", qty=1 },
+		level   = 8,
+	},
+}
+
+-- ─────────────────────────────────────────────────────────────────
+-- DEBUG
+-- ─────────────────────────────────────────────────────────────────
+WorldConfig.Debug = false
 
 return WorldConfig

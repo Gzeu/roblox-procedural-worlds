@@ -1,147 +1,135 @@
 -- CombatSystem.lua
--- Server-authoritative combat: hit detection, damage, knockback, death
+-- Handles melee/ranged combat, hit detection, damage calculation, status effects
 -- v2.4.0
 
-local Players    = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local WorldConfig = require(script.Parent.WorldConfig)
-
 local CombatSystem = {}
 
--- { [attackerModel] = lastAttackTick }
-local cooldowns = {}
--- { [victimModel] = { hp, maxHp, isDead } }
-local healthData = {}
+local Players     = game:GetService("Players")
+local RunService  = game:GetService("RunService")
 
-local function getWeaponDamage(player)
-	-- Read equipped weapon from player attributes (set by Inventory)
-	local dmg = player:GetAttribute("WeaponDamage")
-	return dmg and tonumber(dmg) or WorldConfig.Combat.BaseDamage
+-- ── State ──────────────────────────────────────────────────────────
+local activeCombatants = {}  -- [userId] = { hp, maxHp, effects, lastHit }
+local statusEffects    = {}  -- [userId] = { [effectName] = { duration, tickDmg } }
+
+local EFFECT_TICK = 1  -- seconds between DoT ticks
+
+-- ── Helpers ────────────────────────────────────────────────────────
+local function getHumanoid(character)
+	return character and character:FindFirstChild("Humanoid")
 end
 
-local function applyKnockback(victimRoot, attackerRoot)
-	if not victimRoot or not attackerRoot then return end
-	local dir = (victimRoot.Position - attackerRoot.Position).Unit
-	local force = WorldConfig.Combat.KnockbackForce
-	local bv = Instance.new("BodyVelocity")
-	bv.Velocity       = dir * force + Vector3.new(0, force * 0.3, 0)
-	bv.MaxForce       = Vector3.new(1e5, 1e5, 1e5)
-	bv.P              = 1e4
-	bv.Parent         = victimRoot
-	task.delay(0.15, function() if bv and bv.Parent then bv:Destroy() end end)
+local function clamp(v, lo, hi)
+	return math.max(lo, math.min(hi, v))
 end
 
-local function registerMob(model)
-	if healthData[model] then return end
-	local hum = model:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	healthData[model] = {
-		hp    = hum.MaxHealth,
-		maxHp = hum.MaxHealth,
-		isDead = false,
+-- ── Public API ─────────────────────────────────────────────────────
+function CombatSystem.RegisterPlayer(player)
+	local uid = player.UserId
+	activeCombatants[uid] = {
+		hp    = WorldConfig.PLAYER_MAX_HP,
+		maxHp = WorldConfig.PLAYER_MAX_HP,
+		effects = {},
+		lastHit = 0,
 	}
+	statusEffects[uid] = {}
 end
 
-local function dealDamage(attacker, victim, damage)
-	local hum = victim:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
+function CombatSystem.UnregisterPlayer(player)
+	activeCombatants[player.UserId] = nil
+	statusEffects[player.UserId]    = nil
+end
 
-	registerMob(victim)
-	local data = healthData[victim]
-	if not data or data.isDead then return end
+---Applies damage to a player's character Humanoid.
+---@param attacker Player|nil
+---@param victim   Player
+---@param rawDamage number
+---@param damageType string  "Melee"|"Ranged"|"Magic"|"Fall"
+function CombatSystem.DealDamage(attacker, victim, rawDamage, damageType)
+	if not victim or not victim.Character then return end
+	local hum = getHumanoid(victim.Character)
+	if not hum or hum.Health <= 0 then return end
 
-	data.hp = math.max(0, data.hp - damage)
-	hum.Health = data.hp
+	-- Apply global AI damage multiplier when attacker is an NPC
+	local finalDmg = rawDamage
+	if attacker == nil then
+		finalDmg = rawDamage * WorldConfig.AI_DAMAGE_MULTIPLIER
+	end
+	finalDmg = math.max(1, math.floor(finalDmg))
 
-	-- Hit flash: tint victim parts briefly red
-	task.spawn(function()
-		for _, p in ipairs(victim:GetDescendants()) do
-			if p:IsA("BasePart") then
-				local orig = p.Color
-				p.Color = Color3.fromRGB(255, 80, 80)
-				task.wait(0.1)
-				if p and p.Parent then p.Color = orig end
-			end
-		end
-	end)
+	hum:TakeDamage(finalDmg)
 
-	if data.hp <= 0 then
-		data.isDead = true
-		CombatSystem.OnMobDeath(attacker, victim)
+	local uid = victim.UserId
+	if activeCombatants[uid] then
+		activeCombatants[uid].hp = clamp(hum.Health, 0, hum.MaxHealth)
+		activeCombatants[uid].lastHit = os.clock()
+	end
+
+	if WorldConfig.Debug then
+		warn(string.format("[CombatSystem] %s dealt %d %s dmg to %s",
+			attacker and attacker.Name or "NPC", finalDmg, damageType, victim.Name))
 	end
 end
 
-function CombatSystem.OnMobDeath(attacker, mobModel)
-	-- Notify quest system via attribute on attacker's player
-	local player = Players:GetPlayerFromCharacter(attacker)
-	if player then
-		local mobType = mobModel:GetAttribute("MobType") or "Unknown"
-		player:SetAttribute("LastKilledMob", mobType)
-		player:SetAttribute("LastKilledTick", tick())
-		-- QuestSystem.UpdateProgress hook (called externally to avoid circular require)
-		player:SetAttribute("QuestKillEvent", (player:GetAttribute("QuestKillEvent") or 0) + 1)
-	end
-	task.delay(WorldConfig.Combat.MobRespawnTime, function()
-		if mobModel and mobModel.Parent then
-			mobModel:Destroy()
-			healthData[mobModel] = nil
-		end
-	end)
-end
-
-function CombatSystem.PlayerAttack(player)
-	local char = player.Character
-	if not char then return end
-	local root = char:FindFirstChild("HumanoidRootPart")
-	if not root then return end
-
-	-- Cooldown check
-	local now = tick()
-	local last = cooldowns[char] or 0
-	local rate  = WorldConfig.Combat.AttackCooldown
-	if now - last < rate then return end
-	cooldowns[char] = now
-
-	local damage = getWeaponDamage(player)
-	local range  = WorldConfig.Combat.AttackRange
-
-	-- Sphere overlap: find all humanoid models in range
-	for _, obj in ipairs(workspace:GetDescendants()) do
-		if obj:IsA("Model")
-			and obj ~= char
-			and obj:FindFirstChildOfClass("Humanoid")
-			and obj:GetAttribute("MobType") then
-				local mobRoot = obj:FindFirstChild("HumanoidRootPart")
-				if mobRoot then
-					local dist = (root.Position - mobRoot.Position).Magnitude
-					if dist <= range then
-						dealDamage(char, obj, damage)
-						applyKnockback(mobRoot, root)
-					end
-				end
-		end
+---Applies a status effect (poison, burn, slow) to a player.
+---@param victim     Player
+---@param effectName string
+---@param duration   number  seconds
+---@param tickDamage number  damage per tick (0 for non-DoT)
+function CombatSystem.ApplyStatusEffect(victim, effectName, duration, tickDamage)
+	local uid = victim.UserId
+	if not statusEffects[uid] then return end
+	statusEffects[uid][effectName] = {
+		duration  = duration,
+		ticeDamage = tickDamage,
+		nextTick  = os.clock() + EFFECT_TICK,
+	}
+	if WorldConfig.Debug then
+		warn("[CombatSystem] Applied", effectName, "to", victim.Name)
 	end
 end
 
-function CombatSystem.RegisterMobHealth(model)
-	registerMob(model)
+---Removes all active status effects from a player.
+function CombatSystem.ClearEffects(victim)
+	local uid = victim.UserId
+	if statusEffects[uid] then
+		statusEffects[uid] = {}
+	end
 end
 
-function CombatSystem.GetHealth(model)
-	return healthData[model]
+---Returns combat record for a player.
+function CombatSystem.GetRecord(player)
+	return activeCombatants[player.UserId]
+end
+
+-- ── DoT tick loop ──────────────────────────────────────────────────
+function CombatSystem.Init()
+	Players.PlayerAdded:Connect(CombatSystem.RegisterPlayer)
+	Players.PlayerRemoving:Connect(CombatSystem.UnregisterPlayer)
+	for _, p in Players:GetPlayers() do
+		CombatSystem.RegisterPlayer(p)
+	end
 end
 
 function CombatSystem.Start()
-	-- Clean up cooldowns on character removal
-	Players.PlayerAdded:Connect(function(player)
-		player.CharacterRemoving:Connect(function(char)
-			cooldowns[char] = nil
-		end)
+	RunService.Heartbeat:Connect(function()
+		local now = os.clock()
+		for uid, effects in statusEffects do
+			local player = Players:GetPlayerByUserId(uid)
+			if not player or not player.Character then continue end
+			for name, eff in effects do
+				eff.duration -= 0.016
+				if eff.duration <= 0 then
+					effects[name] = nil
+					continue
+				end
+				if now >= eff.nextTick and eff.ticeDamage > 0 then
+					eff.nextTick = now + EFFECT_TICK
+					CombatSystem.DealDamage(nil, player, eff.ticeDamage, "Status")
+				end
+			end
+		end
 	end)
-
-	if WorldConfig.Debug then
-		warn("[CombatSystem] Started")
-	end
 end
 
 return CombatSystem

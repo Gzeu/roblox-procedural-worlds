@@ -1,116 +1,126 @@
 -- EconomyManager.lua
--- Player wallets, listing market and purchase flow
--- v5.0 | roblox-procedural-worlds
+-- In-game currency (Gold), trading, shop prices, inflation guard
+-- v2.6.0
 
-local Players  = game:GetService("Players")
-local EventBus = require(script.Parent.EventBus)
-
-local okInv, Inventory = pcall(function() return require(script.Parent.Inventory) end)
-if not okInv then Inventory = nil end
-
+local WorldConfig = require(script.Parent.WorldConfig)
 local EconomyManager = {}
 
-local DEFAULT_STARTING_GOLD = 250
-local balances   = {}
-local listings   = {}
-local nextListId = 1
+local Players      = game:GetService("Players")
+local DataStoreService = game:GetService("DataStoreService")
 
-local function getBalance(player)
-	if balances[player.UserId] == nil then
-		balances[player.UserId] = player:GetAttribute("Gold") or DEFAULT_STARTING_GOLD
-		player:SetAttribute("Gold", balances[player.UserId])
+local CurrencyStore = DataStoreService:GetDataStore("EconomyV1")
+
+-- ── State ──────────────────────────────────────────────────────────
+local balances   = {}  -- [userId] = number
+local STARTING_GOLD = WorldConfig.STARTING_GOLD or 100
+
+-- ── Shop catalogue (seed-independent, read from WorldConfig) ───────
+local SHOP = WorldConfig.SHOP_ITEMS or {
+	{ id="HealthPotion",  buy=30,  sell=12 },
+	{ id="IronSword",     buy=150, sell=60 },
+	{ id="MagicCrystal",  buy=500, sell=200 },
+	{ id="Coal",          buy=5,   sell=2  },
+	{ id="Gold",          buy=40,  sell=15 },
+	{ id="Diamond",       buy=800, sell=350 },
+}
+
+-- ── Helpers ────────────────────────────────────────────────────────
+local function loadBalance(uid)
+	local ok, val = pcall(function()
+		return CurrencyStore:GetAsync("bal_" .. uid)
+	end)
+	return (ok and val) or STARTING_GOLD
+end
+
+local function saveBalance(uid, amount)
+	pcall(function()
+		CurrencyStore:SetAsync("bal_" .. uid, amount)
+	end)
+end
+
+local function findShopItem(id)
+	for _, entry in SHOP do
+		if entry.id == id then return entry end
 	end
-	return balances[player.UserId]
+	return nil
 end
 
-local function setBalance(player, amount)
-	balances[player.UserId] = math.max(0, math.floor(amount))
-	player:SetAttribute("Gold", balances[player.UserId])
-	EventBus.emit("Economy:BalanceChanged", player, balances[player.UserId])
+-- ── Public API ─────────────────────────────────────────────────────
+function EconomyManager.GetBalance(player)
+	return balances[player.UserId] or 0
 end
 
-function EconomyManager.initPlayer(player)
-	return getBalance(player)
-end
-
-function EconomyManager.getBalance(player)
-	return getBalance(player)
-end
-
-function EconomyManager.addGold(player, amount)
-	setBalance(player, getBalance(player) + amount)
-	return getBalance(player)
-end
-
-function EconomyManager.removeGold(player, amount)
-	if getBalance(player) < amount then return false, "Insufficient gold" end
-	setBalance(player, getBalance(player) - amount)
-	return true, getBalance(player)
-end
-
-function EconomyManager.createListing(player, itemId, quantity, unitPrice)
-	quantity  = math.max(1, math.floor(quantity  or 1))
-	unitPrice = math.max(1, math.floor(unitPrice or 1))
-	if Inventory and Inventory.hasItem and not Inventory.hasItem(player, itemId, quantity) then
-		return false, "Missing inventory item"
+---Adds currency to player.
+function EconomyManager.Credit(player, amount)
+	if amount <= 0 then return end
+	local uid = player.UserId
+	balances[uid] = (balances[uid] or 0) + amount
+	if WorldConfig.Debug then
+		warn("[Economy] +" .. amount .. " -> " .. player.Name .. " (" .. balances[uid] .. ")")
 	end
-	if Inventory and Inventory.removeItem then
-		Inventory.removeItem(player, itemId, quantity)
-	end
-	local listing = {
-		id           = nextListId,
-		sellerUserId = player.UserId,
-		sellerName   = player.Name,
-		itemId       = itemId,
-		quantity     = quantity,
-		unitPrice    = unitPrice,
-		createdAt    = os.time(),
-	}
-	listings[listing.id] = listing
-	nextListId += 1
-	EventBus.emit("Economy:ListingCreated", player, listing)
-	return true, listing
 end
 
-function EconomyManager.cancelListing(player, listingId)
-	local listing = listings[listingId]
-	if not listing then return false, "Listing not found" end
-	if listing.sellerUserId ~= player.UserId then return false, "Not your listing" end
-	if Inventory and Inventory.addItem then
-		Inventory.addItem(player, listing.itemId, listing.quantity)
-	end
-	listings[listingId] = nil
-	EventBus.emit("Economy:ListingCancelled", player, listingId)
+---Deducts currency. Returns false if insufficient.
+function EconomyManager.Debit(player, amount)
+	local uid = player.UserId
+	if (balances[uid] or 0) < amount then return false end
+	balances[uid] -= amount
 	return true
 end
 
-function EconomyManager.purchaseListing(buyer, listingId, quantity)
-	local listing = listings[listingId]
-	if not listing then return false, "Listing not found" end
-	quantity = math.max(1, math.floor(quantity or 1))
-	if quantity > listing.quantity then return false, "Quantity exceeds stock" end
-	local total = quantity * listing.unitPrice
-	if getBalance(buyer) < total then return false, "Insufficient gold" end
-	if buyer.UserId == listing.sellerUserId then return false, "Cannot buy your own listing" end
-	setBalance(buyer, getBalance(buyer) - total)
-	local seller = Players:GetPlayerByUserId(listing.sellerUserId)
-	if seller then setBalance(seller, getBalance(seller) + total) end
-	if Inventory and Inventory.addItem then Inventory.addItem(buyer, listing.itemId, quantity) end
-	listing.quantity -= quantity
-	if listing.quantity <= 0 then listings[listingId] = nil end
-	EventBus.emit("Economy:Purchased", buyer, listingId, quantity, total)
-	return true, total
+---Player buys itemId from shop.
+---@return boolean, string  success, reason
+function EconomyManager.BuyItem(player, itemId)
+	local entry = findShopItem(itemId)
+	if not entry then return false, "unknown_item" end
+	if not EconomyManager.Debit(player, entry.buy) then
+		return false, "insufficient_funds"
+	end
+	return true, "ok"
 end
 
-function EconomyManager.getListings()
-	local out = {}
-	for _, listing in pairs(listings) do table.insert(out, listing) end
-	table.sort(out, function(a, b) return a.id < b.id end)
-	return out
+---Player sells itemId to shop.
+function EconomyManager.SellItem(player, itemId)
+	local entry = findShopItem(itemId)
+	if not entry then return false, "unknown_item" end
+	EconomyManager.Credit(player, entry.sell)
+	return true, "ok"
 end
 
-Players.PlayerRemoving:Connect(function(player)
-	balances[player.UserId] = nil
-end)
+---Transfer currency between two players.
+function EconomyManager.Transfer(from, to, amount)
+	if not EconomyManager.Debit(from, amount) then
+		return false, "insufficient_funds"
+	end
+	EconomyManager.Credit(to, amount)
+	return true, "ok"
+end
+
+function EconomyManager.GetShopCatalogue()
+	return SHOP
+end
+
+-- ── Lifecycle ──────────────────────────────────────────────────────
+local function onPlayerAdded(player)
+	balances[player.UserId] = loadBalance(player.UserId)
+end
+
+local function onPlayerRemoving(player)
+	local uid = player.UserId
+	if balances[uid] then
+		saveBalance(uid, balances[uid])
+		balances[uid] = nil
+	end
+end
+
+function EconomyManager.Init()
+	Players.PlayerAdded:Connect(onPlayerAdded)
+	Players.PlayerRemoving:Connect(onPlayerRemoving)
+	for _, p in Players:GetPlayers() do
+		onPlayerAdded(p)
+	end
+end
+
+function EconomyManager.Start() end
 
 return EconomyManager
