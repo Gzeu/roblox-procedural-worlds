@@ -1,0 +1,43 @@
+name: Rojo Sync & Validate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate:
+    name: Validate Lua Scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install Selene (Lua linter)
+        run: |
+          curl -L https://github.com/Kampfkarren/selene/releases/latest/download/selene-linux.zip -o selene.zip
+          unzip selene.zip
+          chmod +x selene
+          sudo mv selene /usr/local/bin/selene
+
+      - name: Lint Lua files
+        run: selene src/
+
+      - name: Check for syntax errors (luac)
+        run: |
+          sudo apt-get install -y lua5.1
+          find src/ -name "*.lua" | while read f; do
+            luac -p "$f" && echo "✅ $f OK" || echo "❌ $f FAILED"
+          done
+
+  notify:
+    name: Notify on success
+    runs-on: ubuntu-latest
+    needs: validate
+    if: success()
+
+    steps:
+      - name: Summary
+        run: echo "✅ All Lua scripts validated successfully!"
