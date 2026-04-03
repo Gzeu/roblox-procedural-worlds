@@ -1,152 +1,160 @@
 -- WorldConfig.lua
--- Central configuration for ALL world systems
--- v2.5.0
+-- Central configuration for the procedural world generator
+-- v2.5 | roblox-procedural-worlds
 
 local WorldConfig = {}
 
--- Debug
-WorldConfig.Debug        = false
-WorldConfig.AdminUserIds = {}
+-- ─────────────────────────────────────────────
+-- WORLD DIMENSIONS
+-- ─────────────────────────────────────────────
+WorldConfig.WORLD_WIDTH  = 2000   -- studs
+WorldConfig.WORLD_HEIGHT = 800    -- studs (vertical)
+WorldConfig.WORLD_DEPTH  = 2000   -- studs
 
--- Chunk & Terrain
-WorldConfig.ChunkSize       = 64
-WorldConfig.RenderDistance  = 4
-WorldConfig.BaseHeight      = 20
-WorldConfig.NoiseScale      = 0.015
-WorldConfig.HeightAmplitude = 60
+-- ─────────────────────────────────────────────
+-- CHUNK SETTINGS
+-- ─────────────────────────────────────────────
+WorldConfig.CHUNK_SIZE        = 64   -- studs per chunk side
+WorldConfig.RENDER_DISTANCE   = 5    -- chunks radius around player
+WorldConfig.UNLOAD_DISTANCE   = 8    -- chunks radius before unload
+WorldConfig.MAX_ACTIVE_CHUNKS = 200  -- max simultaneous loaded chunks
 
--- Day/Night
-WorldConfig.DayLengthSeconds = 600  -- 10 min real time = full day
+-- ─────────────────────────────────────────────
+-- TERRAIN NOISE
+-- ─────────────────────────────────────────────
+WorldConfig.NOISE_SCALE       = 0.008  -- lower = smoother terrain
+WorldConfig.NOISE_OCTAVES     = 6
+WorldConfig.NOISE_PERSISTENCE = 0.5
+WorldConfig.NOISE_LACUNARITY  = 2.0
+WorldConfig.HEIGHT_MULTIPLIER = 120   -- peak height in studs
+WorldConfig.SEA_LEVEL         = 40    -- sea level in studs
 
--- Villages
-WorldConfig.VillageConfig = {
-	frequency  = 0.002,
-	minHouses  = 4,
-	maxHouses  = 10,
-	radius     = 30,
+-- ─────────────────────────────────────────────
+-- BIOME THRESHOLDS (temperature / moisture 0-1)
+-- ─────────────────────────────────────────────
+WorldConfig.BIOMES = {
+	{ name = "Tundra",      minTemp = 0.0, maxTemp = 0.2, minMoist = 0.0, maxMoist = 1.0 },
+	{ name = "Taiga",       minTemp = 0.2, maxTemp = 0.4, minMoist = 0.4, maxMoist = 1.0 },
+	{ name = "Grassland",   minTemp = 0.4, maxTemp = 0.6, minMoist = 0.2, maxMoist = 0.6 },
+	{ name = "Forest",      minTemp = 0.4, maxTemp = 0.7, minMoist = 0.6, maxMoist = 1.0 },
+	{ name = "Desert",      minTemp = 0.7, maxTemp = 1.0, minMoist = 0.0, maxMoist = 0.2 },
+	{ name = "Savanna",     minTemp = 0.7, maxTemp = 1.0, minMoist = 0.2, maxMoist = 0.5 },
+	{ name = "Jungle",      minTemp = 0.8, maxTemp = 1.0, minMoist = 0.7, maxMoist = 1.0 },
+	{ name = "Swamp",       minTemp = 0.5, maxTemp = 0.75, minMoist = 0.75, maxMoist = 1.0 },
+	{ name = "Volcanic",    minTemp = 0.9, maxTemp = 1.0, minMoist = 0.0, maxMoist = 0.15 },
+	{ name = "Ocean",       minTemp = 0.0, maxTemp = 1.0, minMoist = 0.0, maxMoist = 1.0, isOcean = true },
 }
 
--- Biomes
-WorldConfig.Biomes = {
-	{ name = "Ocean",     tempMin = -1,   tempMax = 0.1,  humMin = 0.6,  humMax = 1.0,  color = "Deep blue" },
-	{ name = "Desert",    tempMin = 0.6,  tempMax = 1.0,  humMin = 0.0,  humMax = 0.3,  color = "Sand yellow" },
-	{ name = "Savanna",   tempMin = 0.5,  tempMax = 0.9,  humMin = 0.3,  humMax = 0.6,  color = "Bright yellow" },
-	{ name = "Plains",    tempMin = 0.2,  tempMax = 0.6,  humMin = 0.3,  humMax = 0.6,  color = "Bright green" },
-	{ name = "Forest",    tempMin = 0.1,  tempMax = 0.6,  humMin = 0.5,  humMax = 0.8,  color = "Dark green" },
-	{ name = "Taiga",     tempMin = -0.3, tempMax = 0.2,  humMin = 0.4,  humMax = 0.8,  color = "Medium blue" },
-	{ name = "Tundra",    tempMin = -1,   tempMax = -0.2, humMin = 0.0,  humMax = 0.5,  color = "White" },
-	{ name = "Swamp",     tempMin = 0.2,  tempMax = 0.5,  humMin = 0.7,  humMax = 1.0,  color = "Olive" },
-	{ name = "Jungle",    tempMin = 0.5,  tempMax = 1.0,  humMin = 0.75, humMax = 1.0,  color = "Lime green" },
-	{ name = "Mountains", tempMin = -0.5, tempMax = 0.3,  humMin = 0.2,  humMax = 0.7,  color = "Medium stone grey" },
+-- ─────────────────────────────────────────────
+-- TREE DENSITY (per chunk by biome)
+-- ─────────────────────────────────────────────
+WorldConfig.TREE_DENSITY = {
+	Forest   = 18,
+	Jungle   = 28,
+	Taiga    = 12,
+	Grassland= 4,
+	Swamp    = 8,
+	Tundra   = 1,
+	Savanna  = 3,
+	Desert   = 0,
+	Volcanic = 0,
 }
 
--- Ores
-WorldConfig.Ores = {
-	{ name = "Coal",    color = "Really black",  freq = 0.08,  minDepth =  0, maxDepth = 60, veinSize = 5 },
-	{ name = "Iron",    color = "Reddish brown",  freq = 0.05,  minDepth =  5, maxDepth = 50, veinSize = 4 },
-	{ name = "Gold",    color = "Bright yellow",  freq = 0.02,  minDepth = 15, maxDepth = 35, veinSize = 3 },
-	{ name = "Diamond", color = "Cyan",            freq = 0.01,  minDepth = 25, maxDepth = 30, veinSize = 2 },
-	{ name = "Emerald", color = "Bright green",   freq = 0.008, minDepth = 20, maxDepth = 28, veinSize = 2 },
+-- ─────────────────────────────────────────────
+-- ORE GENERATION
+-- ─────────────────────────────────────────────
+WorldConfig.ORES = {
+	{ name = "Coal",    rarity = 0.12, minDepth = 5,  maxDepth = 50  },
+	{ name = "Iron",    rarity = 0.08, minDepth = 15, maxDepth = 80  },
+	{ name = "Gold",    rarity = 0.03, minDepth = 40, maxDepth = 120 },
+	{ name = "Diamond", rarity = 0.01, minDepth = 80, maxDepth = 200 },
+	{ name = "MagicCrystal", rarity = 0.005, minDepth = 100, maxDepth = 300 },
 }
 
--- Dungeons
-WorldConfig.DungeonFrequency    = 0.003
-WorldConfig.DungeonRoomCount    = { min = 5, max = 12 }
-WorldConfig.DungeonChestTiers   = { "Common", "Uncommon", "Rare", "Legendary" }
-WorldConfig.DungeonChestWeights = { 50, 30, 15, 5 }
-
--- Loot Tables
-WorldConfig.LootTables = {
-	Common = {
-		minItems = 1, maxItems = 3,
-		pool = {
-			{ name = "Wooden Sword",  weight = 30, minQty = 1, maxQty = 1 },
-			{ name = "Bread",         weight = 40, minQty = 1, maxQty = 3 },
-			{ name = "Leather Armor", weight = 20, minQty = 1, maxQty = 1 },
-			{ name = "Torch",         weight = 50, minQty = 2, maxQty = 5 },
-			{ name = "Gold Coin",     weight = 35, minQty = 1, maxQty = 10 },
-		},
-	},
-	Uncommon = {
-		minItems = 2, maxItems = 4,
-		pool = {
-			{ name = "Iron Sword",    weight = 25, minQty = 1, maxQty = 1 },
-			{ name = "Chain Mail",    weight = 20, minQty = 1, maxQty = 1 },
-			{ name = "Health Potion", weight = 30, minQty = 1, maxQty = 2 },
-			{ name = "Gold Coin",     weight = 40, minQty = 5, maxQty = 20 },
-			{ name = "Magic Scroll",  weight = 15, minQty = 1, maxQty = 1 },
-		},
-	},
-	Rare = {
-		minItems = 2, maxItems = 5,
-		pool = {
-			{ name = "Steel Sword",    weight = 20, minQty = 1, maxQty = 1 },
-			{ name = "Plate Armor",    weight = 15, minQty = 1, maxQty = 1 },
-			{ name = "Mana Potion",    weight = 25, minQty = 1, maxQty = 2 },
-			{ name = "Gold Coin",      weight = 30, minQty = 20, maxQty = 50 },
-			{ name = "Enchanted Ring", weight = 10, minQty = 1, maxQty = 1 },
-		},
-	},
-	Legendary = {
-		minItems = 3, maxItems = 6,
-		pool = {
-			{ name = "Dragon Sword",  weight = 10, minQty = 1, maxQty = 1 },
-			{ name = "Void Staff",    weight = 8,  minQty = 1, maxQty = 1 },
-			{ name = "Phoenix Armor", weight = 7,  minQty = 1, maxQty = 1 },
-			{ name = "Gold Coin",     weight = 30, minQty = 50, maxQty = 200 },
-			{ name = "Orb of Power",  weight = 5,  minQty = 1, maxQty = 1 },
-			{ name = "Ancient Tome",  weight = 12, minQty = 1, maxQty = 1 },
-		},
-	},
+-- ─────────────────────────────────────────────
+-- WEATHER PROBABILITIES (per biome, per 1 hour)
+-- ─────────────────────────────────────────────
+WorldConfig.WEATHER = {
+	Clear       = 0.50,
+	Cloudy      = 0.20,
+	Rain        = 0.15,
+	Storm       = 0.08,
+	Fog         = 0.05,
+	Snow        = 0.02,
 }
 
--- Mob Spawns
-WorldConfig.MobSpawnCap = 10
-WorldConfig.MobSpawns = {
-	Default   = {
-		{ name="Zombie",   hp=80,  color="Bright green",     size=Vector3.new(2,3,2), biome="Default" },
-		{ name="Skeleton", hp=60,  color="White",             size=Vector3.new(2,3,2), biome="Default" },
-	},
-	Forest    = {
-		{ name="Wolf",    hp=50,  color="Medium stone grey", size=Vector3.new(2,2,3), biome="Forest" },
-		{ name="Spider",  hp=40,  color="Really black",      size=Vector3.new(3,2,3), biome="Forest" },
-		{ name="Goblin",  hp=45,  color="Bright green",      size=Vector3.new(2,3,2), biome="Forest" },
-	},
-	Desert    = {
-		{ name="Scorpion",hp=70,  color="Sand yellow",       size=Vector3.new(3,2,3), biome="Desert" },
-		{ name="Mummy",   hp=100, color="White",             size=Vector3.new(2,4,2), biome="Desert" },
-	},
-	Tundra    = {
-		{ name="IceGolem",hp=150, color="Cyan",              size=Vector3.new(3,5,3), biome="Tundra" },
-		{ name="Yeti",    hp=120, color="White",             size=Vector3.new(3,4,3), biome="Tundra" },
-	},
-	Swamp     = {
-		{ name="Slime",   hp=60,  color="Lime green",        size=Vector3.new(3,3,3), biome="Swamp" },
-		{ name="Witch",   hp=80,  color="Dark purple",       size=Vector3.new(2,4,2), biome="Swamp" },
-	},
-	Jungle    = {
-		{ name="Raptor",  hp=90,  color="Bright green",      size=Vector3.new(3,3,4), biome="Jungle" },
-		{ name="Shaman",  hp=70,  color="Dark orange",       size=Vector3.new(2,4,2), biome="Jungle" },
-	},
-	Mountains = {
-		{ name="Troll",   hp=200, color="Medium stone grey", size=Vector3.new(4,5,4), biome="Mountains" },
-		{ name="Eagle",   hp=45,  color="White",             size=Vector3.new(3,2,3), biome="Mountains" },
-	},
-	Ocean     = {
-		{ name="Kraken",  hp=300, color="Deep blue",         size=Vector3.new(6,4,6), biome="Ocean" },
-	},
+-- ─────────────────────────────────────────────
+-- DAY/NIGHT CYCLE
+-- ─────────────────────────────────────────────
+WorldConfig.DAY_LENGTH_SECONDS = 480   -- 8 real minutes = 1 in-game day
+WorldConfig.SUNRISE_HOUR       = 6
+WorldConfig.SUNSET_HOUR        = 20
+
+-- ─────────────────────────────────────────────
+-- MOB SPAWNING
+-- ─────────────────────────────────────────────
+WorldConfig.MOB_SPAWN_RADIUS   = 80   -- studs from player
+WorldConfig.MOB_DESPAWN_RADIUS = 150  -- studs from player
+WorldConfig.MAX_MOBS_PER_CHUNK = 6
+WorldConfig.MOBS = {
+	{ name = "Goblin",   biomes = {"Forest", "Grassland"}, level = 1,  spawnChance = 0.4, isHostile = true  },
+	{ name = "Skeleton", biomes = {"Desert", "Tundra"},     level = 3,  spawnChance = 0.3, isHostile = true  },
+	{ name = "Troll",    biomes = {"Swamp", "Taiga"},       level = 8,  spawnChance = 0.15,isHostile = true  },
+	{ name = "Dragon",   biomes = {"Volcanic"},             level = 25, spawnChance = 0.05,isHostile = true  },
+	{ name = "Deer",     biomes = {"Forest", "Grassland"},  level = 0,  spawnChance = 0.5, isHostile = false },
+	{ name = "Wolf",     biomes = {"Taiga", "Tundra"},      level = 5,  spawnChance = 0.25,isHostile = true  },
 }
 
--- Quests
-WorldConfig.QuestsPerPlayer = 3
+-- ─────────────────────────────────────────────
+-- DUNGEON SETTINGS
+-- ─────────────────────────────────────────────
+WorldConfig.DUNGEON_CHANCE         = 0.004  -- per chunk
+WorldConfig.DUNGEON_MIN_ROOMS      = 6
+WorldConfig.DUNGEON_MAX_ROOMS      = 18
+WorldConfig.DUNGEON_ROOM_MIN_SIZE  = 12
+WorldConfig.DUNGEON_ROOM_MAX_SIZE  = 28
 
--- Rivers
-WorldConfig.RiverFrequency = 0.004
-WorldConfig.RiverWidth     = { min = 8, max = 20 }
-WorldConfig.RiverDepth     = 4
+-- ─────────────────────────────────────────────
+-- VILLAGE SETTINGS
+-- ─────────────────────────────────────────────
+WorldConfig.VILLAGE_CHANCE         = 0.006  -- per chunk
+WorldConfig.VILLAGE_MIN_BUILDINGS  = 5
+WorldConfig.VILLAGE_MAX_BUILDINGS  = 14
 
--- Weather
-WorldConfig.WeatherCycle = 120
-WorldConfig.WeatherTypes = { "Clear", "Cloudy", "Rain", "Thunderstorm", "Fog", "Blizzard" }
+-- ─────────────────────────────────────────────
+-- PLAYER SETTINGS
+-- ─────────────────────────────────────────────
+WorldConfig.PLAYER_MAX_HP          = 100
+WorldConfig.PLAYER_BASE_SPEED      = 16
+WorldConfig.PLAYER_SPRINT_SPEED    = 28
+WorldConfig.INVENTORY_SLOTS        = 32
+WorldConfig.HOTBAR_SLOTS           = 8
+
+-- ─────────────────────────────────────────────
+-- RIVER SETTINGS
+-- ─────────────────────────────────────────────
+WorldConfig.RIVER_CHANCE           = 0.12   -- per region
+WorldConfig.RIVER_MIN_LENGTH       = 200
+WorldConfig.RIVER_MAX_LENGTH       = 800
+WorldConfig.RIVER_WIDTH            = 10
+
+-- ─────────────────────────────────────────────
+-- LOD SETTINGS
+-- ─────────────────────────────────────────────
+WorldConfig.LOD_LEVELS = {
+	{ distance = 60,  detail = "HIGH"   },
+	{ distance = 150, detail = "MEDIUM" },
+	{ distance = 300, detail = "LOW"    },
+	{ distance = 500, detail = "MINIMAL"},
+}
+
+-- ─────────────────────────────────────────────
+-- v2.5 ADDITIONS
+-- ─────────────────────────────────────────────
+WorldConfig.TELEPORT_COOLDOWN      = 10     -- seconds
+WorldConfig.MAX_WAYPOINTS          = 20
+WorldConfig.CRAFTING_ENABLED       = true
+WorldConfig.PARTICLE_POOL_SIZE     = 50
+WorldConfig.EVENT_BUS_DEBUG        = false  -- set true for verbose event logging
 
 return WorldConfig

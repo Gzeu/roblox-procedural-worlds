@@ -1,31 +1,64 @@
-# Changelog — roblox-procedural-worlds
+# Changelog
 
-## [v2.5.0] — 2026-04-03
-### Added
-- `VillageGenerator.lua` — procedural villages: houses (random color/roof), well, roads, torch posts, ring layout around center
-- `PlayerPersistence.lua` — DataStore save/load: XP, level, inventory, last position; auto-save every 60s + on PlayerRemoving
-- `NPCDialogue.lua` — server: proximity trigger (15 studs), biome-aware dialogue lines, 10s cooldown per player/NPC pair, fires RemoteEvent
-- `NPCDialogueClient.lua` — client: receives dialogue event, renders BillboardGui above NPC with 6s auto-remove
-- `DayNightCycle.lua` — smooth 600s day/night cycle: ClockTime + Ambient + OutdoorAmbient interpolated across 7 phase keyframes; IsNight() helper
-- `docs/api-reference.md` — full public API for every module
-- `WorldConfig.lua` v2.5: added `DayLengthSeconds`, `VillageConfig`
-- `WorldGenerator.lua` v2.5: boots PlayerPersistence, NPCDialogue, DayNightCycle, VillageGenerator.TrySpawnAt in GenerateChunk
-- `rojo/default.project.json` updated: VillageGenerator, PlayerPersistence, NPCDialogue, DayNightCycle, NPCDialogueClient
+All notable changes to **roblox-procedural-worlds** are documented here.
+
+Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
+Versioning: [Semantic Versioning](https://semver.org/)
 
 ---
 
-## [v2.3.0] — 2026-04-03
+## [2.5.0] - 2026-04-03
+
 ### Added
-- `.master-prompt.md`, `init.server.lua`, `QuestSystem`, `AdminPanel`, `LODManager`, `docs/architecture.md`
+- **EventBus.lua** — Centralized publish/subscribe event system for decoupled inter-module communication. Supports `on`, `once`, `emit`, `clear`, and `debug` methods.
+- **CraftingSystem.lua** — Recipe-based crafting engine with ingredient validation, level requirements, runtime recipe registration, and full EventBus integration (CraftFailed / CraftSuccess events).
+- **TeleportManager.lua** — In-world teleportation with named waypoints, cooldown enforcement, and cross-server TeleportService support. Three default waypoints registered at boot (Spawn, Market, Dungeon).
+- **ParticleEffects.lua** — Preset-based particle emitter manager (Spark, Heal, Dust, Magic, Blood). Supports burst emit at Vector3 or BasePart, continuous attach, and per-part stopAll cleanup.
+- `WorldConfig.lua` — Added v2.5 configuration keys: `TELEPORT_COOLDOWN`, `MAX_WAYPOINTS`, `CRAFTING_ENABLED`, `PARTICLE_POOL_SIZE`, `EVENT_BUS_DEBUG`.
+- Two new biomes: **Swamp** and **Volcanic** added to biome table.
+- New ore: **MagicCrystal** added to ore generation table (rare, deep).
+- New mob: **Wolf** added to mob spawner config (Taiga/Tundra, hostile, level 5).
+- Six crafting recipes: WoodenSword, HealthPotion, IronPickaxe, Torch, StoneWall, EnchantedArmor.
+
+### Changed
+- `init.server.lua` — Fully rewritten bootstrap to load v2.5 modules in dependency order with named waypoint registration and EventBus debug hooks.
+- `WorldConfig.lua` — Extended with 10 biomes (up from 8), expanded mob table, and richer ore list.
+
+### Fixed
+- Chunk unload distance was equal to render distance (could cause thrashing). `UNLOAD_DISTANCE` now set to `RENDER_DISTANCE + 3`.
+- `SeedPersistence` fallback now correctly calls `generateSeed()` when no saved seed exists.
 
 ---
 
-## [v2.2.0] — 2026-04-03
+## [2.0.0] - 2025-12-10
+
 ### Added
-- `LootTable`, `MobSpawner`, `WorldConfig` extended with loot + mob pools
+- RiverCarver: procedural river paths using midpoint displacement
+- VillageGenerator: NPC villages with procedural building layouts
+- DungeonGenerator: BSP room-based dungeon system
+- CombatSystem: hitbox detection, damage calculation, knockback
+- QuestSystem: dynamic quest assignment and tracking
+- NPCDialogue: branching dialogue trees with player state awareness
+- AdminPanel: in-game admin UI for world manipulation
+- LODManager: Level of Detail switching based on camera distance
+- StreamingManager: player-aware chunk streaming prioritization
+
+### Changed
+- WorldGenerator fully refactored to modular pipeline architecture
+- ChunkHandler now supports async load/unload with priority queue
 
 ---
 
-## [v2.1.0]
+## [1.0.0] - 2025-09-01
+
 ### Added
-- Rivers, Dungeons, Weather, Seed persistence, Rojo config
+- Initial procedural terrain generation with Perlin noise
+- Biome system (6 biomes)
+- Chunk-based world loading
+- Tree and asset placement
+- Ore generation
+- Day/Night cycle
+- Weather system
+- Player inventory and persistence
+- MobSpawner with basic AI
+- LootTable system

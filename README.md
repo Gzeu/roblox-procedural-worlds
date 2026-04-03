@@ -1,138 +1,171 @@
-# Roblox Procedural Worlds
+# 🌍 roblox-procedural-worlds
 
-> Modular, chunk-based procedural world generation for Roblox Studio — biomes, ores, structures, caves, streaming.
+> A fully modular, seed-driven procedural world generation framework for Roblox — built with Lua, designed for scalability.
 
-[![Version](https://img.shields.io/badge/version-2.0.0-blue)](#)
-[![Luau](https://img.shields.io/badge/Luau-strict-green)](#)
-[![License](https://img.shields.io/badge/license-MIT-lightgrey)](#)
+[![Version](https://img.shields.io/badge/version-2.5.0-blue)](#)
+[![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
+[![Roblox](https://img.shields.io/badge/platform-Roblox%20Studio-red)](#)
 
 ---
 
-## Features
+## ✨ Features
 
-| Feature | Details |
+| Module | Description |
 |---|---|
-| **9 Biomes** | Forest, Desert, Snow, Grassland, Jungle, Tundra, Volcano, Swamp, Ocean |
-| **Smooth biome transitions** | Inverse-square-distance weighting + probabilistic material blending |
-| **Layered terrain** | 3-octave FBM Perlin noise (base + detail + fine + mountains) |
-| **Cave system** | 3D noise cave carving between configurable Y depths |
-| **Ore veins** | Coal, Iron, Gold, Diamond — depth-gated 3D noise |
-| **Structures** | Per-biome: campfires, igloos, ruins, temples, pillars |
-| **Water system** | Automatic ocean/lake fill below WaterLevel |
-| **Chunk streaming** | Runtime load/unload around players; configurable radius |
-| **Performance** | `task.spawn()` per chunk, configurable concurrency cap |
-| **Luau strict** | Full `--!strict` type annotations throughout |
+| `WorldGenerator` | Noise-based procedural terrain generation |
+| `ChunkHandler` | Async chunk load/unload with priority queue |
+| `BiomeResolver` | Temperature/moisture biome assignment (10 biomes) |
+| `StreamingManager` | Player-aware chunk streaming |
+| `LODManager` | Level-of-Detail switching (4 levels) |
+| `RiverCarver` | Midpoint displacement river paths |
+| `VillageGenerator` | Procedural NPC village layouts |
+| `DungeonGenerator` | BSP room-based dungeon system |
+| `MobSpawner` | Biome-aware mob spawning with AI |
+| `OreGenerator` | Depth-based ore vein generation |
+| `DayNightCycle` | Configurable 8-minute in-game day |
+| `WeatherManager` + `WeatherClient` | Server/client weather sync |
+| `CombatSystem` | Hitbox detection, damage, knockback |
+| `QuestSystem` | Dynamic quest assignment & tracking |
+| `NPCDialogue` + `NPCDialogueClient` | Branching dialogue trees |
+| `Inventory` | Player inventory with slot management |
+| `PlayerPersistence` | DataStore-backed player save/load |
+| `LootTable` | Weighted loot drop system |
+| `AdminPanel` | In-game admin controls |
+| `AssetPlacer` | Biome-aware asset scatter |
+| `StructurePlacer` | Pre-built structure placement |
+| `SeedPersistence` | World seed save/restore |
+| **`EventBus`** ⭐ | Pub/sub event system for decoupled modules |
+| **`CraftingSystem`** ⭐ | Recipe-based crafting with level requirements |
+| **`TeleportManager`** ⭐ | Named waypoints + cross-server teleport |
+| **`ParticleEffects`** ⭐ | Preset particle emitter manager |
+
+> ⭐ = Added in v2.5
 
 ---
 
-## Architecture
+## 🚀 Quick Start
 
-```text
-ServerScriptService
-└── WorldGenerator       ← entry point, seed, chunk dispatch, streaming boot
+1. Clone or copy into your Roblox Studio project (via [Rojo](https://rojo.space) — see `rojo/` folder)
+2. Place `src/` contents into `ServerScriptService`
+3. Configure `WorldConfig.lua` to your preferences
+4. Hit **Play** — the world generates automatically from seed
 
-ReplicatedStorage
-├── WorldConfig          ← all settings, 9 biomes, ore definitions
-├── BiomeResolver        ← noise → biome + blend weights
-├── ChunkHandler         ← voxel fill, caves, calls ore/struct/asset placers
-├── OreGenerator         ← 3D ore vein injection per voxel
-├── StructurePlacer      ← biome structure placement
-├── AssetPlacer          ← tree/rock/bush placement
-├── StreamingManager     ← runtime chunk load/unload around players
-├── Assets/              ← Trees, Rocks, Bushes (Models)
-└── Structures/          ← Campfire, Igloo, WoodRuin, etc. (Models)
-```
-
----
-
-## Biome Map
-
-Biomes are distributed in (temperature × moisture) space:
-
-```
-          DRY ←——————————————————→ WET
-          
- HOT      Desert    Grassland   Jungle
-          Volcano
-          
- MEDIUM   Tundra    Forest      Swamp
-                                Ocean
-          
- COLD     Snow      Tundra      Snow
-```
-
----
-
-## Quick Start
-
-1. Copy each `src/*.lua` file into its Studio location (see Architecture above)
-2. Create `ReplicatedStorage/Assets/Trees`, `.../Rocks`, `.../Bushes` with your Models
-3. Create `ReplicatedStorage/Structures/` with structure Models (optional)
-4. Press **Play** — world generates automatically
-
----
-
-## Adding Custom Biomes
-
-**1. Add definition in `WorldConfig.Biomes`:**
 ```lua
-WorldConfig.Biomes.Mushroom = {
-    Name = "Mushroom",
-    SurfaceMaterial = Enum.Material.LeafyGrass,
-    FillMaterial    = Enum.Material.Mud,
-    DebugColor      = Color3.fromRGB(180, 50, 200),
-    Trees = false, Rocks = false, Bushes = true,
-    Structures = { "GiantMushroom" },
-}
+-- Example: craft an item
+local CraftingSystem = require(game.ServerScriptService.CraftingSystem)
+local ok, msg = CraftingSystem.craft(player, "IronPickaxe", playerLevel)
+print(msg) -- "Crafted IronPickaxe successfully!"
+
+-- Example: teleport to a waypoint
+local TeleportManager = require(game.ServerScriptService.TeleportManager)
+TeleportManager.teleportToWaypoint(player, "Market")
+
+-- Example: emit a particle burst
+local ParticleEffects = require(game.ServerScriptService.ParticleEffects)
+ParticleEffects.emit(character.HumanoidRootPart, "Heal", 0.5)
+
+-- Example: subscribe to an event
+local EventBus = require(game.ServerScriptService.EventBus)
+EventBus.on("CraftingSystem:CraftSuccess", function(player, recipe)
+    print(player.Name .. " crafted: " .. recipe)
+end)
 ```
 
-**2. Add pole in `BiomeResolver.BIOME_POLES`:**
+---
+
+## 📁 Project Structure
+
+```
+roblox-procedural-worlds/
+├── src/                    # All Lua modules (ServerScriptService)
+│   ├── init.server.lua     # Bootstrap entry point
+│   ├── WorldConfig.lua     # Central configuration
+│   ├── EventBus.lua        # Pub/sub event system (v2.5)
+│   ├── WorldGenerator.lua
+│   ├── ChunkHandler.lua
+│   ├── BiomeResolver.lua
+│   ├── StreamingManager.lua
+│   ├── LODManager.lua
+│   ├── RiverCarver.lua
+│   ├── VillageGenerator.lua
+│   ├── DungeonGenerator.lua
+│   ├── MobSpawner.lua
+│   ├── OreGenerator.lua
+│   ├── DayNightCycle.lua
+│   ├── WeatherManager.lua
+│   ├── WeatherClient.lua
+│   ├── CombatSystem.lua
+│   ├── QuestSystem.lua
+│   ├── NPCDialogue.lua
+│   ├── NPCDialogueClient.lua
+│   ├── Inventory.lua
+│   ├── PlayerPersistence.lua
+│   ├── LootTable.lua
+│   ├── AdminPanel.lua
+│   ├── AssetPlacer.lua
+│   ├── StructurePlacer.lua
+│   ├── SeedPersistence.lua
+│   ├── CraftingSystem.lua  # (v2.5)
+│   ├── TeleportManager.lua # (v2.5)
+│   └── ParticleEffects.lua # (v2.5)
+├── rojo/                   # Rojo project config
+├── docs/                   # Documentation
+├── CHANGELOG.md
+├── CONTRIBUTING.md
+└── LICENSE
+```
+
+---
+
+## ⚙️ Configuration
+
+All tuneable values live in `src/WorldConfig.lua`:
+
 ```lua
-Mushroom = { t = 0.55, m = 0.70 },
+WorldConfig.CHUNK_SIZE        = 64     -- studs per chunk
+WorldConfig.RENDER_DISTANCE   = 5      -- chunk radius
+WorldConfig.NOISE_SCALE       = 0.008
+WorldConfig.HEIGHT_MULTIPLIER = 120
+WorldConfig.DAY_LENGTH_SECONDS= 480    -- 8 min real time
+WorldConfig.TELEPORT_COOLDOWN = 10     -- seconds (v2.5)
+WorldConfig.CRAFTING_ENABLED  = true   -- (v2.5)
+WorldConfig.EVENT_BUS_DEBUG   = false  -- verbose logging (v2.5)
 ```
-
-Done — blending is automatic.
 
 ---
 
-## Adding Custom Ores
+## 🗺️ Biomes
 
-In `WorldConfig.OreVeins`, add:
+Tundra · Taiga · Grassland · Forest · Desert · Savanna · Jungle · **Swamp** · **Volcanic** · Ocean
+
+---
+
+## 🧪 EventBus Usage
+
+All modules communicate through `EventBus` — no direct coupling:
+
 ```lua
-{
-    Name = "Emerald",
-    Material  = Enum.Material.Neon,   -- or custom MaterialVariant
-    MinY = -90, MaxY = -30,
-    Scale     = 14,
-    Threshold = 0.85,
-    SeedOffset = 50000,
-},
+-- Subscribe
+local unsub = EventBus.on("Player:Joined", function(player) ... end)
+
+-- Emit
+EventBus.emit("MySystem:Event", data)
+
+-- One-time
+EventBus.once("WorldGenerator:Ready", function() ... end)
+
+-- Unsubscribe
+unsub()
 ```
 
 ---
 
-## Performance Tuning
+## 📜 License
 
-See [`docs/PERFORMANCE.md`](docs/PERFORMANCE.md)
-
-| Map Size  | Est. Time | Key Setting |
-|-----------|-----------|-------------|
-| 500×500   | ~20–35 s  | Defaults |
-| 1000×1000 | ~90–120 s | `VoxelSize = 8` |
-| 2000×2000 | ~6–10 min | `VoxelSize = 8`, `ChunkSize = 60` |
+MIT — see [LICENSE](./LICENSE)
 
 ---
 
-## Roadmap
+## 🤝 Contributing
 
-- [ ] Dungeon / underground room generation
-- [ ] River carving along terrain valleys
-- [ ] Biome weather zones (rain, snow, ash)
-- [ ] Rojo project file for pro workflow
-- [ ] DataStore seed persistence across sessions
-
----
-
-## License
-
-MIT © 2026 [Gzeu](https://github.com/Gzeu)
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for guidelines.
