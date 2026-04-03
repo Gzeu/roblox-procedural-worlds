@@ -1,194 +1,99 @@
 -- NPCDialogue.lua
--- Procedural NPC dialogue lines based on biome, weather, and quests
--- v2.4.0
+-- Proximity-based NPC dialogue with biome-aware lines and quest hints
+-- Server creates dialogue; client receives via RemoteEvent
+-- v2.5.0
 
-local Players     = game:GetService("Players")
-local WorldConfig = require(script.Parent.WorldConfig)
+local Players       = game:GetService("Players")
+local RunService    = game:GetService("RunService")
+local WorldConfig   = require(script.Parent.WorldConfig)
+local BiomeResolver = require(script.Parent.BiomeResolver)
 
 local NPCDialogue = {}
 
--- Dialogue pools per context
-local DIALOGUE = {
-	greeting = {
-		"Traveller, you look weary. Rest a moment.",
-		"Ah, a visitor! These lands are full of danger.",
-		"Welcome, stranger. Watch your step out there.",
-		"You have the eyes of an adventurer.",
-		"I haven't seen another soul in days.",
-	},
-	biome = {
-		Forest   = { "These woods whisper at night.", "Wolves roam here after dark.", "The trees remember everything.", "Goblins nest east of the river." },
-		Desert   = { "The heat will kill you before the scorpions do.", "Water is worth more than gold here.", "Mummies rise when the sand shifts." },
-		Tundra   = { "The cold seeps into your very soul.", "Ice Golems patrol the northern ridges.", "Blizzards come without warning." },
-		Swamp    = { "Don't drink the water. Trust me.", "The witches brew something foul tonight.", "Slimes multiply in the mist." },
-		Jungle   = { "The jungle is alive — and it watches you.", "Raptors hunt in packs here.", "The shamans speak to old gods." },
-		Mountains= { "Trolls block the only pass north.", "Eagles will steal your food.", "The peak hides an ancient dungeon." },
-		Plains   = { "Good hunting here if you know where to look.", "The grass hides more than you think.", "Peaceful — for now." },
-		Ocean    = { "The Kraken sleeps beneath. Don't wake it.", "Sailors speak of lights below the surface." },
-		Savanna  = { "The dry season brings out the beasts.", "Fire spreads fast in the Savanna." },
-		Taiga    = { "Pine resin burns bright and long.", "Bears are the least of your worries." },
-	},
-	weather = {
-		Clear       = { "Fine day for an adventure.", "Enjoy the sun while it lasts." },
-		Cloudy      = { "Storm's coming. Can feel it in my bones.", "The sky is restless today." },
-		Rain        = { "Mud makes it hard to track.", "The river will flood by morning." },
-		Thunderstorm= { "Stay away from tall trees!", "Metal armour and lightning — bad idea." },
-		Fog         = { "I can't see more than ten paces. Perfect for ambushes.", "Something moves in the fog." },
-		Blizzard    = { "We'll freeze if we don't find shelter.", "Only the Ice Golems love this weather." },
-	},
-	quest = {
-		kill    = { "There's a bounty on those creatures, you know.", "Every {mob} you slay keeps us safer." },
-		explore = { "I've heard there are places no one has mapped.", "The world is larger than any map." },
-		loot    = { "Dungeons hide more treasure than you'd expect.", "Chests don't open themselves." },
-		survive = { "Survival is its own reward out here.", "Stay alive long enough and the land respects you." },
-		boss    = { "There is a great evil in {biome}. Only a hero can end it.", "Legends are written in blood." },
-	},
-	goodbye = {
-		"May your blade stay sharp.",
-		"Don't die out there.",
-		"The road is long. Travel safely.",
-		"Come back when you have stories to tell.",
-		"Fortune favours the bold.",
-	},
+local TRIGGER_DIST  = 15  -- studs
+local COOLDOWN      = 10  -- seconds between repeats per player/NPC pair
+local dialogueEvent       -- RemoteEvent, created on Start
+
+local lastTriggered = {}  -- { [userId .. "_" .. npcId] = tick() }
+local registeredNPCs = {} -- { { model, lines, id } }
+local npcCounter     = 0
+
+local BIOME_GREETINGS = {
+	Forest    = { "The forest whispers secrets tonight.", "Watch for wolves after dusk.", "I've found strange ruins nearby..." },
+	Desert    = { "Water is scarce here, traveler.",     "The scorpions grow bolder each season.",  "An ancient pyramid lies to the east." },
+	Tundra    = { "The cold never truly leaves here.",   "The Yeti have been restless lately.",     "Wrap yourself warm, friend." },
+	Swamp     = { "Beware the Witch's hut at midnight.", "The water here will swallow you whole.",  "Slimes breed in the fog." },
+	Jungle    = { "The jungle has eyes.",                "Raptors hunt in packs. Stay alert.",      "Ancient temples hide deadly traps." },
+	Mountains = { "The Troll Bridge demands a toll.",    "Eagles circle the peak at dawn.",         "Legends speak of a dragon's hoard." },
+	Plains    = { "Good harvest season, thank the gods.","Travelers often pass through here.",      "The horizon holds many adventures." },
+	Ocean     = { "The Kraken stirs in the deep.",       "Many ships never returned from the fog.", "The tides bring strange treasures." },
+	Default   = { "Safe travels, adventurer.",           "The world is vast and dangerous.",        "May fortune guide your path." },
 }
 
-local function pick(pool, seed)
-	if not pool or #pool == 0 then return nil end
-	local idx = (seed % #pool) + 1
-	return pool[idx]
+local function getLinesForBiome(biomeName)
+	return BIOME_GREETINGS[biomeName] or BIOME_GREETINGS.Default
 end
 
-local function fillTemplate(line, vars)
-	if not line then return "..." end
-	for k, v in pairs(vars) do
-		line = line:gsub("{" .. k .. "}", tostring(v))
+local function triggerDialogue(player, npc, seed)
+	local userId = player.UserId
+	local key    = tostring(userId) .. "_" .. tostring(npc.id)
+	if lastTriggered[key] and tick() - lastTriggered[key] < COOLDOWN then return end
+	lastTriggered[key] = tick()
+
+	local char = player.Character
+	if not char then return end
+	local root = char:FindFirstChild("HumanoidRootPart")
+	if not root then return end
+
+	-- Pick biome-aware line
+	local worldSeed = seed or 0
+	local biomeName = BiomeResolver.GetBiomeAt(
+		root.Position.X, root.Position.Z, worldSeed
+	)
+	local lines   = getLinesForBiome(biomeName)
+	local rng     = Random.new(tick() * 1000 + npc.id)
+	local line    = lines[rng:NextInteger(1, #lines)]
+	local npcName = npc.model.Name
+
+	if dialogueEvent then
+		dialogueEvent:FireClient(player, npcName, line)
 	end
-	return line
 end
 
-function NPCDialogue.Generate(npcModel, player, context)
-	context = context or {}
-	local seed    = npcModel:GetAttribute("NPCSeed") or math.random(1, 999999)
-	local biome   = context.biome   or "Plains"
-	local weather = context.weather or "Clear"
-	local quest   = context.quest   -- optional quest table
-
-	local lines = {}
-
-	-- Greeting
-	local greeting = pick(DIALOGUE.greeting, seed)
-	if greeting then table.insert(lines, greeting) end
-
-	-- Biome line
-	local biomePool = DIALOGUE.biome[biome]
-	local biomeLine = pick(biomePool, seed + 1)
-	if biomeLine then table.insert(lines, biomeLine) end
-
-	-- Weather line
-	local weatherPool = DIALOGUE.weather[weather]
-	local weatherLine = pick(weatherPool, seed + 2)
-	if weatherLine then table.insert(lines, weatherLine) end
-
-	-- Quest hint
-	if quest then
-		local questPool = DIALOGUE.quest[quest.type]
-		local questLine = pick(questPool, seed + 3)
-		if questLine then
-			questLine = fillTemplate(questLine, { mob = quest.mob or "creature", biome = biome })
-			table.insert(lines, questLine)
-		end
-	end
-
-	-- Goodbye
-	local goodbye = pick(DIALOGUE.goodbye, seed + 4)
-	if goodbye then table.insert(lines, goodbye) end
-
-	return lines
+function NPCDialogue.Register(npcModel, customLines)
+	npcCounter = npcCounter + 1
+	table.insert(registeredNPCs, {
+		model = npcModel,
+		lines = customLines or nil,
+		id    = npcCounter,
+	})
 end
 
-function NPCDialogue.ShowDialogue(player, npcModel, lines)
-	if not player or not player.PlayerGui then return end
+function NPCDialogue.Start(worldSeed)
+	-- Create RemoteEvent for client communication
+	local remotes = game:GetService("ReplicatedStorage")
+	dialogueEvent = Instance.new("RemoteEvent")
+	dialogueEvent.Name   = "NPCDialogueEvent"
+	dialogueEvent.Parent = remotes
 
-	-- Remove old dialogue if any
-	local existing = player.PlayerGui:FindFirstChild("NPCDialogueGui")
-	if existing then existing:Destroy() end
+	-- Proximity check loop
+	RunService.Heartbeat:Connect(function()
+		for _, npc in ipairs(registeredNPCs) do
+			local npcRoot = npc.model:FindFirstChild("HumanoidRootPart")
+			if not npcRoot then continue end
 
-	local sg = Instance.new("ScreenGui")
-	sg.Name        = "NPCDialogueGui"
-	sg.ResetOnSpawn = false
-
-	local frame = Instance.new("Frame")
-	frame.Size            = UDim2.new(0.5, 0, 0, 180)
-	frame.Position        = UDim2.new(0.25, 0, 0.7, 0)
-	frame.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
-	frame.BorderSizePixel = 0
-	frame.Parent          = sg
-
-	local corner = Instance.new("UICorner")
-	corner.CornerRadius = UDim.new(0, 10)
-	corner.Parent       = frame
-
-	local npcName = Instance.new("TextLabel")
-	npcName.Size            = UDim2.new(1, -16, 0, 28)
-	npcName.Position        = UDim2.new(0, 8, 0, 6)
-	npcName.BackgroundTransparency = 1
-	npcName.TextColor3      = Color3.fromRGB(255, 200, 80)
-	npcName.TextSize        = 14
-	npcName.Font            = Enum.Font.GothamBold
-	npcName.TextXAlignment  = Enum.TextXAlignment.Left
-	npcName.Text            = npcModel.Name or "Villager"
-	npcName.Parent          = frame
-
-	local dialogueLabel = Instance.new("TextLabel")
-	dialogueLabel.Name            = "DialogueText"
-	dialogueLabel.Size            = UDim2.new(1, -16, 0, 100)
-	dialogueLabel.Position        = UDim2.new(0, 8, 0, 36)
-	dialogueLabel.BackgroundTransparency = 1
-	dialogueLabel.TextColor3      = Color3.fromRGB(220, 220, 230)
-	dialogueLabel.TextSize        = 13
-	dialogueLabel.Font            = Enum.Font.Gotham
-	dialogueLabel.TextXAlignment  = Enum.TextXAlignment.Left
-	dialogueLabel.TextYAlignment  = Enum.TextYAlignment.Top
-	dialogueLabel.TextWrapped     = true
-	dialogueLabel.Text            = lines[1] or "..."
-	dialogueLabel.Parent          = frame
-
-	local nextBtn = Instance.new("TextButton")
-	nextBtn.Size            = UDim2.new(0, 100, 0, 28)
-	nextBtn.Position        = UDim2.new(1, -108, 1, -34)
-	nextBtn.BackgroundColor3 = Color3.fromRGB(60, 120, 200)
-	nextBtn.TextColor3      = Color3.fromRGB(255, 255, 255)
-	nextBtn.Text            = "Next ▶"
-	nextBtn.TextSize        = 12
-	nextBtn.Font            = Enum.Font.GothamBold
-	nextBtn.Parent          = frame
-
-	local nextCorner = Instance.new("UICorner")
-	nextCorner.CornerRadius = UDim.new(0, 6)
-	nextCorner.Parent       = nextBtn
-
-	sg.Parent = player.PlayerGui
-
-	local lineIdx = 1
-	nextBtn.MouseButton1Click:Connect(function()
-		lineIdx = lineIdx + 1
-		if lineIdx > #lines then
-			sg:Destroy()
-		else
-			dialogueLabel.Text = lines[lineIdx]
-			if lineIdx == #lines then
-				nextBtn.Text = "Close ✕"
+			for _, player in ipairs(Players:GetPlayers()) do
+				local char = player.Character
+				if not char then continue end
+				local root = char:FindFirstChild("HumanoidRootPart")
+				if not root then continue end
+				local dist = (root.Position - npcRoot.Position).Magnitude
+				if dist <= TRIGGER_DIST then
+					triggerDialogue(player, npc, worldSeed)
+				end
 			end
 		end
 	end)
-
-	-- Auto-close after 30s
-	task.delay(30, function() if sg and sg.Parent then sg:Destroy() end end)
-end
-
-function NPCDialogue.Interact(player, npcModel, context)
-	local lines = NPCDialogue.Generate(npcModel, player, context)
-	NPCDialogue.ShowDialogue(player, npcModel, lines)
 end
 
 return NPCDialogue

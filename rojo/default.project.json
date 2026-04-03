@@ -7,32 +7,33 @@
       "ProceduralWorldsServer": {
         "$className": "Script",
         "$path": "src/init.server.lua",
-        "WorldGenerator":      { "$path": "src/WorldGenerator.lua" },
-        "WorldConfig":         { "$path": "src/WorldConfig.lua" },
-        "BiomeResolver":       { "$path": "src/BiomeResolver.lua" },
-        "ChunkHandler":        { "$path": "src/ChunkHandler.lua" },
-        "OreGenerator":        { "$path": "src/OreGenerator.lua" },
-        "RiverCarver":         { "$path": "src/RiverCarver.lua" },
-        "DungeonGenerator":    { "$path": "src/DungeonGenerator.lua" },
-        "LootTable":           { "$path": "src/LootTable.lua" },
-        "MobSpawner":          { "$path": "src/MobSpawner.lua" },
-        "QuestSystem":         { "$path": "src/QuestSystem.lua" },
-        "AdminPanel":          { "$path": "src/AdminPanel.lua" },
-        "LODManager":          { "$path": "src/LODManager.lua" },
-        "CombatSystem":        { "$path": "src/CombatSystem.lua" },
-        "Inventory":           { "$path": "src/Inventory.lua" },
-        "NPCDialogue":         { "$path": "src/NPCDialogue.lua" },
-        "DayNightCycle":       { "$path": "src/DayNightCycle.lua" },
-        "WeatherManager":      { "$path": "src/WeatherManager.lua" },
-        "SeedPersistence":     { "$path": "src/SeedPersistence.lua" },
-        "StreamingManager":    { "$path": "src/StreamingManager.lua" },
-        "AssetPlacer":         { "$path": "src/AssetPlacer.lua" },
-        "StructurePlacer":     { "$path": "src/StructurePlacer.lua" }
+        "WorldGenerator":     { "$path": "src/WorldGenerator.lua" },
+        "WorldConfig":        { "$path": "src/WorldConfig.lua" },
+        "BiomeResolver":      { "$path": "src/BiomeResolver.lua" },
+        "ChunkHandler":       { "$path": "src/ChunkHandler.lua" },
+        "OreGenerator":       { "$path": "src/OreGenerator.lua" },
+        "RiverCarver":        { "$path": "src/RiverCarver.lua" },
+        "DungeonGenerator":   { "$path": "src/DungeonGenerator.lua" },
+        "LootTable":          { "$path": "src/LootTable.lua" },
+        "MobSpawner":         { "$path": "src/MobSpawner.lua" },
+        "QuestSystem":        { "$path": "src/QuestSystem.lua" },
+        "AdminPanel":         { "$path": "src/AdminPanel.lua" },
+        "LODManager":         { "$path": "src/LODManager.lua" },
+        "VillageGenerator":   { "$path": "src/VillageGenerator.lua" },
+        "PlayerPersistence":  { "$path": "src/PlayerPersistence.lua" },
+        "NPCDialogue":        { "$path": "src/NPCDialogue.lua" },
+        "DayNightCycle":      { "$path": "src/DayNightCycle.lua" },
+        "WeatherManager":     { "$path": "src/WeatherManager.lua" },
+        "SeedPersistence":    { "$path": "src/SeedPersistence.lua" },
+        "StreamingManager":   { "$path": "src/StreamingManager.lua" },
+        "AssetPlacer":        { "$path": "src/AssetPlacer.lua" },
+        "StructurePlacer":    { "$path": "src/StructurePlacer.lua" }
       }
     },
     "StarterPlayerScripts": {
       "$className": "StarterPlayerScripts",
-      "WeatherClient": { "$path": "src/WeatherClient.lua" }
+      "WeatherClient":       { "$path": "src/WeatherClient.lua" },
+      "NPCDialogueClient":   { "$path": "src/NPCDialogueClient.lua" }
     }
   }
 }

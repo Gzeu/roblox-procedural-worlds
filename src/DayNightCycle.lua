@@ -1,6 +1,7 @@
 -- DayNightCycle.lua
--- Smooth day/night cycle with Lighting control and time-of-day events
--- v2.4.0
+-- Smooth day/night cycle synced across all clients via Lighting
+-- Day length configurable in WorldConfig
+-- v2.5.0
 
 local Lighting    = game:GetService("Lighting")
 local RunService  = game:GetService("RunService")
@@ -8,137 +9,81 @@ local WorldConfig = require(script.Parent.WorldConfig)
 
 local DayNightCycle = {}
 
-local currentTime  = WorldConfig.DayNight.StartHour or 8  -- 0-24
-local cyclePaused  = false
-local lastTick     = 0
-local callbacks    = { onDawn = {}, onDusk = {}, onNoon = {}, onMidnight = {} }
+local elapsed   = 0
+local started   = false
 
-local DAWN_HOUR     = 6
-local DUSK_HOUR     = 20
-local NOON_HOUR     = 12
-local MIDNIGHT_HOUR = 0
-local TOLERANCE     = 0.05  -- trigger window
-
-local firedThisCycle = {}
-
-local function fireEvent(name)
-	if firedThisCycle[name] then return end
-	firedThisCycle[name] = true
-	for _, cb in ipairs(callbacks[name] or {}) do
-		task.spawn(cb)
-	end
+-- Map 0..1 time of day to Lighting.ClockTime (0-24)
+local function toDayClock(t)
+	return t * 24
 end
 
-local function resetFiredFlags()
-	for k in pairs(firedThisCycle) do
-		firedThisCycle[k] = nil
-	end
-end
+-- Ambient and sky color transitions
+local PHASES = {
+	-- { timeNorm, ambient R,G,B, outoor R,G,B }
+	{ t = 0.0,  amb = Color3.fromRGB(10,10,30),   sky = Color3.fromRGB(5,5,20)   },  -- midnight
+	{ t = 0.25, amb = Color3.fromRGB(80,50,30),   sky = Color3.fromRGB(180,80,20) }, -- dawn
+	{ t = 0.35, amb = Color3.fromRGB(200,180,150),sky = Color3.fromRGB(255,200,120) },-- sunrise
+	{ t = 0.5,  amb = Color3.fromRGB(180,200,220),sky = Color3.fromRGB(120,170,255) },-- noon
+	{ t = 0.65, amb = Color3.fromRGB(220,170,100),sky = Color3.fromRGB(255,160,60) }, -- sunset
+	{ t = 0.75, amb = Color3.fromRGB(60,30,20),   sky = Color3.fromRGB(30,10,5)  },  -- dusk
+	{ t = 1.0,  amb = Color3.fromRGB(10,10,30),   sky = Color3.fromRGB(5,5,20)   },  -- midnight again
+}
 
-local function applyLighting(hour)
-	Lighting.ClockTime   = hour
-	Lighting.GeographicLatitude = WorldConfig.DayNight.Latitude or 41
-
-	-- Ambient and brightness curve
-	local t = (hour / 24)
-	local dayFactor = math.clamp(math.sin(t * math.pi * 2 - math.pi * 0.5) * 0.5 + 0.5, 0, 1)
-
-	Lighting.Ambient = Color3.fromRGB(
-		math.floor(30 + dayFactor * 60),
-		math.floor(30 + dayFactor * 60),
-		math.floor(50 + dayFactor * 50)
+local function lerpColor(a, b, t)
+	return Color3.new(
+		a.R + (b.R - a.R) * t,
+		a.G + (b.G - a.G) * t,
+		a.B + (b.B - a.B) * t
 	)
-	Lighting.Brightness   = 0.5 + dayFactor * 2.5
-	Lighting.OutdoorAmbient = Color3.fromRGB(
-		math.floor(50 + dayFactor * 100),
-		math.floor(50 + dayFactor * 100),
-		math.floor(80 + dayFactor * 80)
-	)
+end
 
-	-- Sky colours at dawn/dusk
-	if hour >= 5 and hour <= 7 then
-		Lighting.FogColor  = Color3.fromRGB(220, 150, 100)
-		Lighting.FogEnd    = 500
-		Lighting.FogStart  = 200
-	elseif hour >= 19 and hour <= 21 then
-		Lighting.FogColor  = Color3.fromRGB(180, 80, 60)
-		Lighting.FogEnd    = 400
-		Lighting.FogStart  = 150
-	elseif hour >= 22 or hour <= 4 then
-		Lighting.FogColor  = Color3.fromRGB(10, 10, 30)
-		Lighting.FogEnd    = 800
-		Lighting.FogStart  = 300
-	else
-		Lighting.FogColor  = Color3.fromRGB(180, 210, 230)
-		Lighting.FogEnd    = 2000
-		Lighting.FogStart  = 800
+local function getPhaseColors(norm)
+	for i = 1, #PHASES - 1 do
+		local a = PHASES[i]
+		local b = PHASES[i + 1]
+		if norm >= a.t and norm <= b.t then
+			local t = (norm - a.t) / (b.t - a.t)
+			return lerpColor(a.amb, b.amb, t), lerpColor(a.sky, b.sky, t)
+		end
 	end
+	return PHASES[1].amb, PHASES[1].sky
 end
 
-function DayNightCycle.GetHour()
-	return currentTime
-end
+function DayNightCycle.Start(startTimeNorm)
+	if started then return end
+	started = true
 
-function DayNightCycle.SetHour(hour)
-	currentTime = hour % 24
-	applyLighting(currentTime)
-end
+	local dayLength = WorldConfig.DayLengthSeconds or 600
+	-- Start at given normalized time (0-1), default noon
+	elapsed = (startTimeNorm or 0.5) * dayLength
 
-function DayNightCycle.IsDaytime()
-	return currentTime >= DAWN_HOUR and currentTime < DUSK_HOUR
-end
+	RunService.Heartbeat:Connect(function(dt)
+		elapsed = elapsed + dt
+		local norm = (elapsed % dayLength) / dayLength
 
-function DayNightCycle.OnDawn(callback)
-	table.insert(callbacks.onDawn, callback)
-end
+		Lighting.ClockTime = toDayClock(norm)
 
-function DayNightCycle.OnDusk(callback)
-	table.insert(callbacks.onDusk, callback)
-end
+		local ambColor, skyColor = getPhaseColors(norm)
+		Lighting.Ambient           = ambColor
+		Lighting.OutdoorAmbient    = skyColor
 
-function DayNightCycle.OnNoon(callback)
-	table.insert(callbacks.onNoon, callback)
-end
-
-function DayNightCycle.OnMidnight(callback)
-	table.insert(callbacks.onMidnight, callback)
-end
-
-function DayNightCycle.Pause()
-	cyclePaused = true
-end
-
-function DayNightCycle.Resume()
-	cyclePaused = false
-end
-
-function DayNightCycle.Start()
-	lastTick = tick()
-	applyLighting(currentTime)
-
-	RunService.Heartbeat:Connect(function()
-		if cyclePaused then return end
-
-		local now   = tick()
-		local delta = now - lastTick
-		lastTick    = now
-
-		-- Advance time
-		local speed = WorldConfig.DayNight.CycleMinutes or 20  -- real minutes per full day
-		local hoursPerSecond = 24 / (speed * 60)
-		currentTime = (currentTime + delta * hoursPerSecond) % 24
-
-		applyLighting(currentTime)
-
-		-- Reset fired flags at midnight
-		if currentTime < 0.05 then resetFiredFlags() end
-
-		-- Fire time events
-		if math.abs(currentTime - DAWN_HOUR)     < TOLERANCE then fireEvent("onDawn")     end
-		if math.abs(currentTime - NOON_HOUR)     < TOLERANCE then fireEvent("onNoon")     end
-		if math.abs(currentTime - DUSK_HOUR)     < TOLERANCE then fireEvent("onDusk")     end
-		if currentTime < TOLERANCE                            then fireEvent("onMidnight") end
+		-- Night: enable shadows and reduce brightness
+		if norm < 0.3 or norm > 0.7 then
+			Lighting.Brightness = 0.3
+		else
+			Lighting.Brightness = 2.0
+		end
 	end)
+end
+
+function DayNightCycle.GetNormalized()
+	local dayLength = WorldConfig.DayLengthSeconds or 600
+	return (elapsed % dayLength) / dayLength
+end
+
+function DayNightCycle.IsNight()
+	local t = DayNightCycle.GetNormalized()
+	return t < 0.25 or t > 0.75
 end
 
 return DayNightCycle

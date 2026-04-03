@@ -1,23 +1,32 @@
 -- WorldConfig.lua
 -- Central configuration for ALL world systems
--- v2.4.0
+-- v2.5.0
 
 local WorldConfig = {}
 
--- ── Debug ──────────────────────────────────────────────────────────────────
-WorldConfig.Debug = false
-
--- ── Admin ──────────────────────────────────────────────────────────────────
+-- Debug
+WorldConfig.Debug        = false
 WorldConfig.AdminUserIds = {}
 
--- ── Chunk & Terrain ────────────────────────────────────────────────────────
+-- Chunk & Terrain
 WorldConfig.ChunkSize       = 64
 WorldConfig.RenderDistance  = 4
 WorldConfig.BaseHeight      = 20
 WorldConfig.NoiseScale      = 0.015
 WorldConfig.HeightAmplitude = 60
 
--- ── Biomes ─────────────────────────────────────────────────────────────────
+-- Day/Night
+WorldConfig.DayLengthSeconds = 600  -- 10 min real time = full day
+
+-- Villages
+WorldConfig.VillageConfig = {
+	frequency  = 0.002,
+	minHouses  = 4,
+	maxHouses  = 10,
+	radius     = 30,
+}
+
+-- Biomes
 WorldConfig.Biomes = {
 	{ name = "Ocean",     tempMin = -1,   tempMax = 0.1,  humMin = 0.6,  humMax = 1.0,  color = "Deep blue" },
 	{ name = "Desert",    tempMin = 0.6,  tempMax = 1.0,  humMin = 0.0,  humMax = 0.3,  color = "Sand yellow" },
@@ -31,35 +40,7 @@ WorldConfig.Biomes = {
 	{ name = "Mountains", tempMin = -0.5, tempMax = 0.3,  humMin = 0.2,  humMax = 0.7,  color = "Medium stone grey" },
 }
 
--- ── Combat ─────────────────────────────────────────────────────────────────
-WorldConfig.Combat = {
-	BaseDamage      = 15,
-	AttackRange     = 8,
-	AttackCooldown  = 0.6,   -- seconds between attacks
-	KnockbackForce  = 40,
-	MobRespawnTime  = 30,    -- seconds after death before model is destroyed
-}
-
--- ── Inventory ───────────────────────────────────────────────────────────────
-WorldConfig.Inventory = {
-	MaxSlots = 20,
-	Weapons  = {
-		["Wooden Sword"]  = { damage = 10,  range = 7  },
-		["Iron Sword"]    = { damage = 20,  range = 8  },
-		["Steel Sword"]   = { damage = 35,  range = 8  },
-		["Dragon Sword"]  = { damage = 80,  range = 10 },
-		["Void Staff"]    = { damage = 65,  range = 15 },
-	},
-}
-
--- ── Day/Night ───────────────────────────────────────────────────────────────
-WorldConfig.DayNight = {
-	CycleMinutes = 20,    -- real-time minutes per full in-game day
-	StartHour    = 8,     -- starting time of day (0-24)
-	Latitude     = 41,    -- geographic latitude for sun angle
-}
-
--- ── Ores ───────────────────────────────────────────────────────────────────
+-- Ores
 WorldConfig.Ores = {
 	{ name = "Coal",    color = "Really black",  freq = 0.08,  minDepth =  0, maxDepth = 60, veinSize = 5 },
 	{ name = "Iron",    color = "Reddish brown",  freq = 0.05,  minDepth =  5, maxDepth = 50, veinSize = 4 },
@@ -68,13 +49,13 @@ WorldConfig.Ores = {
 	{ name = "Emerald", color = "Bright green",   freq = 0.008, minDepth = 20, maxDepth = 28, veinSize = 2 },
 }
 
--- ── Dungeons ───────────────────────────────────────────────────────────────
+-- Dungeons
 WorldConfig.DungeonFrequency    = 0.003
 WorldConfig.DungeonRoomCount    = { min = 5, max = 12 }
 WorldConfig.DungeonChestTiers   = { "Common", "Uncommon", "Rare", "Legendary" }
 WorldConfig.DungeonChestWeights = { 50, 30, 15, 5 }
 
--- ── Loot Tables ────────────────────────────────────────────────────────────
+-- Loot Tables
 WorldConfig.LootTables = {
 	Common = {
 		minItems = 1, maxItems = 3,
@@ -99,11 +80,11 @@ WorldConfig.LootTables = {
 	Rare = {
 		minItems = 2, maxItems = 5,
 		pool = {
-			{ name = "Steel Sword",   weight = 20, minQty = 1, maxQty = 1 },
-			{ name = "Plate Armor",   weight = 15, minQty = 1, maxQty = 1 },
-			{ name = "Mana Potion",   weight = 25, minQty = 1, maxQty = 2 },
-			{ name = "Gold Coin",     weight = 30, minQty = 20, maxQty = 50 },
-			{ name = "Enchanted Ring",weight = 10, minQty = 1, maxQty = 1 },
+			{ name = "Steel Sword",    weight = 20, minQty = 1, maxQty = 1 },
+			{ name = "Plate Armor",    weight = 15, minQty = 1, maxQty = 1 },
+			{ name = "Mana Potion",    weight = 25, minQty = 1, maxQty = 2 },
+			{ name = "Gold Coin",      weight = 30, minQty = 20, maxQty = 50 },
+			{ name = "Enchanted Ring", weight = 10, minQty = 1, maxQty = 1 },
 		},
 	},
 	Legendary = {
@@ -119,52 +100,52 @@ WorldConfig.LootTables = {
 	},
 }
 
--- ── Mob Spawns ─────────────────────────────────────────────────────────────
+-- Mob Spawns
 WorldConfig.MobSpawnCap = 10
 WorldConfig.MobSpawns = {
 	Default   = {
-		{ name = "Zombie",   hp = 80,  color = "Bright green",     size = Vector3.new(2,3,2), biome = "Default" },
-		{ name = "Skeleton", hp = 60,  color = "White",             size = Vector3.new(2,3,2), biome = "Default" },
+		{ name="Zombie",   hp=80,  color="Bright green",     size=Vector3.new(2,3,2), biome="Default" },
+		{ name="Skeleton", hp=60,  color="White",             size=Vector3.new(2,3,2), biome="Default" },
 	},
 	Forest    = {
-		{ name = "Wolf",    hp = 50,  color = "Medium stone grey", size = Vector3.new(2,2,3), biome = "Forest" },
-		{ name = "Spider",  hp = 40,  color = "Really black",      size = Vector3.new(3,2,3), biome = "Forest" },
-		{ name = "Goblin",  hp = 45,  color = "Bright green",      size = Vector3.new(2,3,2), biome = "Forest" },
+		{ name="Wolf",    hp=50,  color="Medium stone grey", size=Vector3.new(2,2,3), biome="Forest" },
+		{ name="Spider",  hp=40,  color="Really black",      size=Vector3.new(3,2,3), biome="Forest" },
+		{ name="Goblin",  hp=45,  color="Bright green",      size=Vector3.new(2,3,2), biome="Forest" },
 	},
 	Desert    = {
-		{ name = "Scorpion",hp = 70,  color = "Sand yellow",       size = Vector3.new(3,2,3), biome = "Desert" },
-		{ name = "Mummy",   hp = 100, color = "White",             size = Vector3.new(2,4,2), biome = "Desert" },
+		{ name="Scorpion",hp=70,  color="Sand yellow",       size=Vector3.new(3,2,3), biome="Desert" },
+		{ name="Mummy",   hp=100, color="White",             size=Vector3.new(2,4,2), biome="Desert" },
 	},
 	Tundra    = {
-		{ name = "IceGolem",hp = 150, color = "Cyan",              size = Vector3.new(3,5,3), biome = "Tundra" },
-		{ name = "Yeti",    hp = 120, color = "White",             size = Vector3.new(3,4,3), biome = "Tundra" },
+		{ name="IceGolem",hp=150, color="Cyan",              size=Vector3.new(3,5,3), biome="Tundra" },
+		{ name="Yeti",    hp=120, color="White",             size=Vector3.new(3,4,3), biome="Tundra" },
 	},
 	Swamp     = {
-		{ name = "Slime",   hp = 60,  color = "Lime green",        size = Vector3.new(3,3,3), biome = "Swamp" },
-		{ name = "Witch",   hp = 80,  color = "Dark purple",       size = Vector3.new(2,4,2), biome = "Swamp" },
+		{ name="Slime",   hp=60,  color="Lime green",        size=Vector3.new(3,3,3), biome="Swamp" },
+		{ name="Witch",   hp=80,  color="Dark purple",       size=Vector3.new(2,4,2), biome="Swamp" },
 	},
 	Jungle    = {
-		{ name = "Raptor",  hp = 90,  color = "Bright green",      size = Vector3.new(3,3,4), biome = "Jungle" },
-		{ name = "Shaman",  hp = 70,  color = "Dark orange",       size = Vector3.new(2,4,2), biome = "Jungle" },
+		{ name="Raptor",  hp=90,  color="Bright green",      size=Vector3.new(3,3,4), biome="Jungle" },
+		{ name="Shaman",  hp=70,  color="Dark orange",       size=Vector3.new(2,4,2), biome="Jungle" },
 	},
 	Mountains = {
-		{ name = "Troll",   hp = 200, color = "Medium stone grey", size = Vector3.new(4,5,4), biome = "Mountains" },
-		{ name = "Eagle",   hp = 45,  color = "White",             size = Vector3.new(3,2,3), biome = "Mountains" },
+		{ name="Troll",   hp=200, color="Medium stone grey", size=Vector3.new(4,5,4), biome="Mountains" },
+		{ name="Eagle",   hp=45,  color="White",             size=Vector3.new(3,2,3), biome="Mountains" },
 	},
 	Ocean     = {
-		{ name = "Kraken",  hp = 300, color = "Deep blue",         size = Vector3.new(6,4,6), biome = "Ocean" },
+		{ name="Kraken",  hp=300, color="Deep blue",         size=Vector3.new(6,4,6), biome="Ocean" },
 	},
 }
 
--- ── Quests ─────────────────────────────────────────────────────────────────
+-- Quests
 WorldConfig.QuestsPerPlayer = 3
 
--- ── Rivers ─────────────────────────────────────────────────────────────────
+-- Rivers
 WorldConfig.RiverFrequency = 0.004
 WorldConfig.RiverWidth     = { min = 8, max = 20 }
 WorldConfig.RiverDepth     = 4
 
--- ── Weather ────────────────────────────────────────────────────────────────
+-- Weather
 WorldConfig.WeatherCycle = 120
 WorldConfig.WeatherTypes = { "Clear", "Cloudy", "Rain", "Thunderstorm", "Fog", "Blizzard" }
 

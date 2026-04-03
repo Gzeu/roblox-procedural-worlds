@@ -1,23 +1,24 @@
 -- WorldGenerator.lua
--- Master orchestrator: all subsystems
--- v2.4.0
+-- Master orchestrator — all subsystems
+-- v2.5.0
 
-local WorldConfig      = require(script.Parent.WorldConfig)
-local BiomeResolver    = require(script.Parent.BiomeResolver)
-local ChunkHandler     = require(script.Parent.ChunkHandler)
-local OreGenerator     = require(script.Parent.OreGenerator)
-local RiverCarver      = require(script.Parent.RiverCarver)
-local DungeonGenerator = require(script.Parent.DungeonGenerator)
-local WeatherManager   = require(script.Parent.WeatherManager)
-local SeedPersistence  = require(script.Parent.SeedPersistence)
-local StreamingManager = require(script.Parent.StreamingManager)
-local MobSpawner       = require(script.Parent.MobSpawner)
-local QuestSystem      = require(script.Parent.QuestSystem)
-local AdminPanel       = require(script.Parent.AdminPanel)
-local LODManager       = require(script.Parent.LODManager)
-local CombatSystem     = require(script.Parent.CombatSystem)
-local Inventory        = require(script.Parent.Inventory)
-local DayNightCycle    = require(script.Parent.DayNightCycle)
+local WorldConfig        = require(script.Parent.WorldConfig)
+local BiomeResolver      = require(script.Parent.BiomeResolver)
+local ChunkHandler       = require(script.Parent.ChunkHandler)
+local OreGenerator       = require(script.Parent.OreGenerator)
+local RiverCarver        = require(script.Parent.RiverCarver)
+local DungeonGenerator   = require(script.Parent.DungeonGenerator)
+local VillageGenerator   = require(script.Parent.VillageGenerator)
+local WeatherManager     = require(script.Parent.WeatherManager)
+local SeedPersistence    = require(script.Parent.SeedPersistence)
+local StreamingManager   = require(script.Parent.StreamingManager)
+local MobSpawner         = require(script.Parent.MobSpawner)
+local QuestSystem        = require(script.Parent.QuestSystem)
+local AdminPanel         = require(script.Parent.AdminPanel)
+local LODManager         = require(script.Parent.LODManager)
+local PlayerPersistence  = require(script.Parent.PlayerPersistence)
+local NPCDialogue        = require(script.Parent.NPCDialogue)
+local DayNightCycle      = require(script.Parent.DayNightCycle)
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -28,8 +29,8 @@ local currentSeed  = 0
 local initialized  = false
 local activeChunks = {}
 
-function WorldGenerator.GetSeed()     return currentSeed end
-function WorldGenerator.SetSeed(seed) currentSeed = seed; SeedPersistence.Save(seed) end
+function WorldGenerator.GetSeed()  return currentSeed end
+function WorldGenerator.SetSeed(s) currentSeed = s; SeedPersistence.Save(s) end
 
 function WorldGenerator.GenerateChunk(cx, cz)
 	local key = cx .. "," .. cz
@@ -45,6 +46,7 @@ function WorldGenerator.GenerateChunk(cx, cz)
 	OreGenerator.PlaceOres(worldX, worldZ, currentSeed)
 	RiverCarver.CarveAt(worldX, worldZ, currentSeed)
 	DungeonGenerator.TrySpawnAt(worldX, worldZ, currentSeed)
+	VillageGenerator.TrySpawnAt(worldX, worldZ, currentSeed)
 end
 
 function WorldGenerator.Init(forceSeed)
@@ -64,25 +66,17 @@ function WorldGenerator.Init(forceSeed)
 	if WorldConfig.Debug then warn("[WorldGenerator] Seed:", currentSeed) end
 
 	-- Boot all subsystems
+	PlayerPersistence.Start()
 	WeatherManager.Start(currentSeed)
 	StreamingManager.Start(currentSeed)
 	MobSpawner.Start(currentSeed)
 	QuestSystem.Start(currentSeed)
-	CombatSystem.Start()
-	Inventory.Start()
-	DayNightCycle.Start()
+	NPCDialogue.Start(currentSeed)
+	DayNightCycle.Start(0.5)  -- start at noon
 	LODManager.Start()
 	AdminPanel.Init(WorldGenerator, MobSpawner)
 
-	-- Day/night mob density: more mobs at night
-	DayNightCycle.OnDusk(function()
-		WorldConfig.MobSpawnCap = 18
-	end)
-	DayNightCycle.OnDawn(function()
-		WorldConfig.MobSpawnCap = 10
-	end)
-
-	-- Initial chunks
+	-- Initial chunk grid
 	for dx = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
 		for dz = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
 			WorldGenerator.GenerateChunk(dx, dz)
@@ -107,9 +101,8 @@ function WorldGenerator._TrackPlayer(player)
 		if not char then return end
 		local root = char:FindFirstChild("HumanoidRootPart")
 		if not root then return end
-		local pos = root.Position
-		local cx  = math.floor(pos.X / WorldConfig.ChunkSize)
-		local cz  = math.floor(pos.Z / WorldConfig.ChunkSize)
+		local cx = math.floor(root.Position.X / WorldConfig.ChunkSize)
+		local cz = math.floor(root.Position.Z / WorldConfig.ChunkSize)
 		if cx ~= lastCX or cz ~= lastCZ then
 			lastCX, lastCZ = cx, cz
 			for dx = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do

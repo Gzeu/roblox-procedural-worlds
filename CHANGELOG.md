@@ -1,31 +1,28 @@
 # Changelog — roblox-procedural-worlds
 
-## [v2.4.0] — 2026-04-03
+## [v2.5.0] — 2026-04-03
 ### Added
-- `src/CombatSystem.lua` — server-authoritative hit detection, damage, hit-flash, knockback (BodyVelocity), death event, mob respawn timer; weapon damage read from player attributes set by Inventory
-- `src/Inventory.lua` — per-player slot inventory (20 slots), stacking, AddItem/RemoveItem/EquipItem/Has/GiveLoot; weapon stats applied as player attributes for CombatSystem; synced via SetAttribute
-- `src/NPCDialogue.lua` — procedural dialogue engine: greeting + biome + weather + quest-type lines, template variable substitution ({mob}, {biome}); in-game GUI with Next/Close button; auto-close after 30s
-- `src/DayNightCycle.lua` — smooth Heartbeat-driven day/night: ClockTime, Ambient, Brightness, FogColor per time band (dawn/dusk/night/day); event callbacks OnDawn/OnDusk/OnNoon/OnMidnight; configurable CycleMinutes
-- `WorldConfig.lua` v2.4: added `Combat` table (BaseDamage, AttackRange, AttackCooldown, KnockbackForce, MobRespawnTime), `Inventory` table (MaxSlots, Weapons map with damage/range), `DayNight` table (CycleMinutes, StartHour, Latitude)
-- `WorldGenerator.lua` v2.4: boots CombatSystem, Inventory, DayNightCycle; hooks OnDusk/OnDawn to double/restore MobSpawnCap (night = more mobs)
-- `rojo/default.project.json`: registered CombatSystem, Inventory, NPCDialogue, DayNightCycle
-
-### Changed
-- `WorldGenerator.SetSeed()` now also calls `SeedPersistence.Save()` immediately
-- MobSpawnCap dynamically scales: 10 (day) → 18 (night) via DayNightCycle callbacks
+- `VillageGenerator.lua` — procedural villages: houses (random color/roof), well, roads, torch posts, ring layout around center
+- `PlayerPersistence.lua` — DataStore save/load: XP, level, inventory, last position; auto-save every 60s + on PlayerRemoving
+- `NPCDialogue.lua` — server: proximity trigger (15 studs), biome-aware dialogue lines, 10s cooldown per player/NPC pair, fires RemoteEvent
+- `NPCDialogueClient.lua` — client: receives dialogue event, renders BillboardGui above NPC with 6s auto-remove
+- `DayNightCycle.lua` — smooth 600s day/night cycle: ClockTime + Ambient + OutdoorAmbient interpolated across 7 phase keyframes; IsNight() helper
+- `docs/api-reference.md` — full public API for every module
+- `WorldConfig.lua` v2.5: added `DayLengthSeconds`, `VillageConfig`
+- `WorldGenerator.lua` v2.5: boots PlayerPersistence, NPCDialogue, DayNightCycle, VillageGenerator.TrySpawnAt in GenerateChunk
+- `rojo/default.project.json` updated: VillageGenerator, PlayerPersistence, NPCDialogue, DayNightCycle, NPCDialogueClient
 
 ---
 
 ## [v2.3.0] — 2026-04-03
 ### Added
-- `.master-prompt.md`, `src/init.server.lua`, `src/QuestSystem.lua`, `src/AdminPanel.lua`, `src/LODManager.lua`, `docs/architecture.md`
-- `WorldConfig.lua` v2.3: Debug, AdminUserIds, QuestsPerPlayer
+- `.master-prompt.md`, `init.server.lua`, `QuestSystem`, `AdminPanel`, `LODManager`, `docs/architecture.md`
 
 ---
 
 ## [v2.2.0] — 2026-04-03
 ### Added
-- `LootTable.lua`, `MobSpawner.lua`, extended WorldConfig
+- `LootTable`, `MobSpawner`, `WorldConfig` extended with loot + mob pools
 
 ---
 
