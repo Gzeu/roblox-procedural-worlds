@@ -1,0 +1,12 @@
+{
+  "name": "roblox-procedural-worlds",
+  "tree": {
+    "$className": "DataModel",
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+      "ProceduralWorlds": {
+        "$path": "src"
+      }
+    }
+  }
+}

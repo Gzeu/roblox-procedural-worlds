@@ -1,0 +1,11 @@
+std = "roblox"
+
+[rules]
+unnecessary_else = "warn"
+unnused_variable = "warn"
+mismatched_arg_count = "warn"
+shadowing = "warn"
+empty_if = "warn"
+
+[config.unused_variable]
+allow_unused_self = true

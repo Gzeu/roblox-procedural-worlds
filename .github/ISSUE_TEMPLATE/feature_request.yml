@@ -1,0 +1,55 @@
+name: 🚀 Feature Request
+description: Propune o funcționalitate nouă
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Ai o idee de îmbunătățire? Descrie-o mai jos!
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problema pe care o rezolvă
+      description: Ce problemă sau limitare ai întâlnit?
+      placeholder: "Momentan nu există un sistem de..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Soluția propusă
+      description: Cum ar trebui să funcționeze?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Categorie
+      options:
+        - World Generation
+        - Combat & Fighting
+        - AI & NPCs
+        - Economy & Crafting
+        - Quests & Progression
+        - Performance
+        - Developer Tools
+        - Altul
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternative considerate
+      description: Ai luat în calcul alte abordări?
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Am căutat în issues existente și nu am găsit o cerere similară
+          required: true

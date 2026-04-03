@@ -1,0 +1,85 @@
+name: 🐛 Bug Report
+description: Raportează un bug în roblox-procedural-worlds
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Mulțumim că raportezi un bug! Completează cât mai multe detalii.
+
+  - type: input
+    id: version
+    attributes:
+      label: Versiune
+      description: Ce versiune folosești? (ex. v5.0.0)
+      placeholder: v5.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: Modul afectat
+      options:
+        - WorldGenerator
+        - ChunkHandler
+        - MobAI / AIDirector
+        - CombatSystem
+        - FightingStyles
+        - QuestSystem
+        - EconomyManager
+        - NPCDialogue
+        - BossEncounter
+        - DungeonGenerator
+        - AwakenSystem
+        - ClanSystem
+        - BaseBuilding
+        - WeatherManager
+        - Altul
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Descrierea bug-ului
+      description: O descriere clară a ce se întâmplă.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Pași pentru reproducere
+      placeholder: |
+        1. Pornește jocul cu seed-ul X
+        2. Mergi la coordonatele Y
+        3. Apasă...
+        4. Vezi eroarea
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Comportament așteptat
+      description: Ce ar trebui să se întâmple?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Output Console / Error logs
+      description: Lipește erorile din Roblox Studio Output.
+      render: shell
+
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Checklist
+      options:
+        - label: Am căutat în issues existente și nu am găsit un duplicat
+          required: true
+        - label: Folosesc ultima versiune
+          required: false

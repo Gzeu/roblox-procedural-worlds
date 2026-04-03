@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentație
+    url: https://github.com/Gzeu/roblox-procedural-worlds/tree/main/docs
+    about: Citește documentația înainte de a deschide un issue.
+  - name: 💬 Discuții
+    url: https://github.com/Gzeu/roblox-procedural-worlds/discussions
+    about: Întrebări generale și idei — folosește Discussions.
