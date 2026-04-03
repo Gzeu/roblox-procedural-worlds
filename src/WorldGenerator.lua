@@ -1,108 +1,125 @@
---!strict
--- ============================================================
--- MAIN SCRIPT: ServerScriptService/WorldGenerator  [v2.1]
--- Orchestrates full world generation:
---   1. Seed resolution (DataStore persistence or manual override)
---   2. Initial chunk grid with concurrency throttle
---   3. River carving (post-terrain)
---   4. Dungeon generation (post-terrain, underground)
---   5. StreamingManager boot (runtime load/unload)
---   6. WeatherManager boot (biome-zone weather)
--- ============================================================
+-- WorldGenerator.lua
+-- Main orchestrator: terrain, biomes, ores, rivers, dungeons, weather, mobs
+-- v2.2.0
 
-local ReplicatedStorage   = game:GetService("ReplicatedStorage")
-local ServerScriptService = game:GetService("ServerScriptService")
+local WorldConfig      = require(script.Parent.WorldConfig)
+local BiomeResolver    = require(script.Parent.BiomeResolver)
+local ChunkHandler     = require(script.Parent.ChunkHandler)
+local OreGenerator     = require(script.Parent.OreGenerator)
+local RiverCarver      = require(script.Parent.RiverCarver)
+local DungeonGenerator = require(script.Parent.DungeonGenerator)
+local WeatherManager   = require(script.Parent.WeatherManager)
+local SeedPersistence  = require(script.Parent.SeedPersistence)
+local StreamingManager = require(script.Parent.StreamingManager)
+local MobSpawner       = require(script.Parent.MobSpawner)
 
-local WorldConfig      = require(ReplicatedStorage:WaitForChild("WorldConfig"))
-local ChunkHandler     = require(ReplicatedStorage:WaitForChild("ChunkHandler"))
-local StreamingManager = require(ReplicatedStorage:WaitForChild("StreamingManager"))
-local AssetPlacer      = require(ReplicatedStorage:WaitForChild("AssetPlacer"))
-local RiverCarver      = require(ReplicatedStorage:WaitForChild("RiverCarver"))
-local DungeonGenerator = require(ReplicatedStorage:WaitForChild("DungeonGenerator"))
-local WeatherManager   = require(ReplicatedStorage:WaitForChild("WeatherManager"))
-local SeedPersistence  = require(ServerScriptService:WaitForChild("SeedPersistence"))
+local Players  = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
--- ----------------------------------------------------------------
--- Resolve Seed
--- ----------------------------------------------------------------
-local cfg = WorldConfig.Settings
+local WorldGenerator = {}
 
-local seed: number
-if cfg.Seed ~= 0 then
-	seed = cfg.Seed
-	print("[WorldGenerator] Using manual seed:", seed)
-else
-	seed = SeedPersistence.GetOrCreateSeed()
+local currentSeed    = 0
+local initialized    = false
+local activeChunks   = {}
+
+-- ─── Seed ───────────────────────────────────────────────────────────────────
+function WorldGenerator.GetSeed()
+	return currentSeed
 end
 
-math.randomseed(seed)
+function WorldGenerator.SetSeed(seed)
+	currentSeed = seed
+end
 
--- ----------------------------------------------------------------
--- Init asset container in Workspace
--- ----------------------------------------------------------------
-AssetPlacer.Init()
+-- ─── Chunk Generation ───────────────────────────────────────────────────────
+function WorldGenerator.GenerateChunk(cx, cz)
+	local key = cx .. "," .. cz
+	if activeChunks[key] then return end
+	activeChunks[key] = true
 
--- ----------------------------------------------------------------
--- Initial chunk generation
--- ----------------------------------------------------------------
-local halfX = cfg.WorldSizeX / 2
-local halfZ = cfg.WorldSizeZ / 2
+	local worldX = cx * WorldConfig.ChunkSize
+	local worldZ = cz * WorldConfig.ChunkSize
 
-local pending   = 0
-local completed = 0
-local total     = 0
+	-- Terrain
+	ChunkHandler.BuildChunk(cx, cz, currentSeed)
 
-for _ = -halfX, halfX - cfg.ChunkSize, cfg.ChunkSize do
-	for _ = -halfZ, halfZ - cfg.ChunkSize, cfg.ChunkSize do
-		total += 1
+	-- Ores
+	OreGenerator.PlaceOres(worldX, worldZ, currentSeed)
+
+	-- River carve pass
+	RiverCarver.CarveAt(worldX, worldZ, currentSeed)
+
+	-- Dungeon spawn attempt
+	DungeonGenerator.TrySpawnAt(worldX, worldZ, currentSeed)
+end
+
+-- ─── Init ───────────────────────────────────────────────────────────────────
+function WorldGenerator.Init(forceSeed)
+	if initialized then return end
+	initialized = true
+
+	-- Resolve seed
+	local saved = SeedPersistence.Load()
+	if forceSeed then
+		currentSeed = forceSeed
+	elseif saved and saved ~= 0 then
+		currentSeed = saved
+	else
+		currentSeed = math.random(1, 2^31 - 1)
+		SeedPersistence.Save(currentSeed)
 	end
-end
 
-print(string.format("[WorldGenerator] Generating %d chunks (seed=%d)…", total, seed))
+	print("[WorldGenerator] Seed:", currentSeed)
 
-for cx = -halfX, halfX - cfg.ChunkSize, cfg.ChunkSize do
-	for cz = -halfZ, halfZ - cfg.ChunkSize, cfg.ChunkSize do
-		while pending >= cfg.MaxConcurrentChunks do
-			task.wait(0.05)
+	-- Start subsystems
+	WeatherManager.Start(currentSeed)
+	StreamingManager.Start(currentSeed)
+	MobSpawner.Start(currentSeed)
+
+	-- Initial chunk load around spawn
+	for dx = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
+		for dz = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
+			WorldGenerator.GenerateChunk(dx, dz)
 		end
-		pending += 1
-		task.spawn(function()
-			local ok, err = pcall(ChunkHandler.GenerateChunk, cx, cz, seed)
-			if ok then
-				StreamingManager.MarkLoaded(cx, cz)
-			else
-				warn(string.format("[WorldGenerator] Chunk (%d,%d) failed: %s", cx, cz, tostring(err)))
-			end
-			pending   -= 1
-			completed += 1
+	end
+
+	-- Track players for dynamic loading
+	Players.PlayerAdded:Connect(function(player)
+		player.CharacterAdded:Connect(function()
+			WorldGenerator._TrackPlayer(player)
 		end)
+	end)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player.Character then
+			WorldGenerator._TrackPlayer(player)
+		end
 	end
 end
 
-while completed < total do
-	task.wait(0.5)
-	print(string.format("[WorldGenerator] Progress: %d / %d chunks", completed, total))
+-- ─── Player Tracking ────────────────────────────────────────────────────────
+function WorldGenerator._TrackPlayer(player)
+	local lastCX, lastCZ = nil, nil
+
+	RunService.Heartbeat:Connect(function()
+		local char = player.Character
+		if not char then return end
+		local root = char:FindFirstChild("HumanoidRootPart")
+		if not root then return end
+
+		local pos = root.Position
+		local cx  = math.floor(pos.X / WorldConfig.ChunkSize)
+		local cz  = math.floor(pos.Z / WorldConfig.ChunkSize)
+
+		if cx ~= lastCX or cz ~= lastCZ then
+			lastCX, lastCZ = cx, cz
+			for dx = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
+				for dz = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
+					WorldGenerator.GenerateChunk(cx + dx, cz + dz)
+				end
+			end
+		end
+	end)
 end
 
-print("[WorldGenerator] Initial terrain complete.")
-
--- ----------------------------------------------------------------
--- Post-terrain passes
--- ----------------------------------------------------------------
-task.spawn(function()
-	print("[WorldGenerator] Starting river carving…")
-	RiverCarver.CarveRivers(seed)
-end)
-
-task.spawn(function()
-	print("[WorldGenerator] Starting dungeon generation…")
-	DungeonGenerator.GenerateDungeons(seed)
-end)
-
--- ----------------------------------------------------------------
--- Runtime systems
--- ----------------------------------------------------------------
-StreamingManager.Start(seed)
-WeatherManager.Start(seed)
-
-print("[WorldGenerator] All systems running.")
+return WorldGenerator

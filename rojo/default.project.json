@@ -4,67 +4,28 @@
     "$className": "DataModel",
     "ServerScriptService": {
       "$className": "ServerScriptService",
-      "WorldGenerator": {
-        "$path": "../src/WorldGenerator.lua",
-        "$className": "Script"
-      },
-      "SeedPersistence": {
-        "$path": "../src/SeedPersistence.lua",
-        "$className": "ModuleScript"
+      "ProceduralWorldsServer": {
+        "$className": "Script",
+        "$path": "src/init.server.lua",
+        "WorldGenerator":      { "$path": "src/WorldGenerator.lua" },
+        "WorldConfig":         { "$path": "src/WorldConfig.lua" },
+        "BiomeResolver":       { "$path": "src/BiomeResolver.lua" },
+        "ChunkHandler":        { "$path": "src/ChunkHandler.lua" },
+        "OreGenerator":        { "$path": "src/OreGenerator.lua" },
+        "RiverCarver":         { "$path": "src/RiverCarver.lua" },
+        "DungeonGenerator":    { "$path": "src/DungeonGenerator.lua" },
+        "LootTable":           { "$path": "src/LootTable.lua" },
+        "MobSpawner":          { "$path": "src/MobSpawner.lua" },
+        "WeatherManager":      { "$path": "src/WeatherManager.lua" },
+        "SeedPersistence":     { "$path": "src/SeedPersistence.lua" },
+        "StreamingManager":    { "$path": "src/StreamingManager.lua" },
+        "AssetPlacer":         { "$path": "src/AssetPlacer.lua" },
+        "StructurePlacer":     { "$path": "src/StructurePlacer.lua" }
       }
     },
-    "ReplicatedStorage": {
-      "$className": "ReplicatedStorage",
-      "WorldConfig": {
-        "$path": "../src/WorldConfig.lua",
-        "$className": "ModuleScript"
-      },
-      "BiomeResolver": {
-        "$path": "../src/BiomeResolver.lua",
-        "$className": "ModuleScript"
-      },
-      "ChunkHandler": {
-        "$path": "../src/ChunkHandler.lua",
-        "$className": "ModuleScript"
-      },
-      "OreGenerator": {
-        "$path": "../src/OreGenerator.lua",
-        "$className": "ModuleScript"
-      },
-      "StructurePlacer": {
-        "$path": "../src/StructurePlacer.lua",
-        "$className": "ModuleScript"
-      },
-      "AssetPlacer": {
-        "$path": "../src/AssetPlacer.lua",
-        "$className": "ModuleScript"
-      },
-      "StreamingManager": {
-        "$path": "../src/StreamingManager.lua",
-        "$className": "ModuleScript"
-      },
-      "RiverCarver": {
-        "$path": "../src/RiverCarver.lua",
-        "$className": "ModuleScript"
-      },
-      "DungeonGenerator": {
-        "$path": "../src/DungeonGenerator.lua",
-        "$className": "ModuleScript"
-      },
-      "WeatherManager": {
-        "$path": "../src/WeatherManager.lua",
-        "$className": "ModuleScript"
-      }
-    },
-    "StarterPlayer": {
-      "$className": "StarterPlayer",
-      "StarterPlayerScripts": {
-        "$className": "StarterPlayerScripts",
-        "WeatherClient": {
-          "$path": "../src/WeatherClient.lua",
-          "$className": "LocalScript"
-        }
-      }
+    "StarterPlayerScripts": {
+      "$className": "StarterPlayerScripts",
+      "WeatherClient": { "$path": "src/WeatherClient.lua" }
     }
   }
 }

@@ -1,200 +1,135 @@
---!strict
--- ============================================================
--- MODULE: ReplicatedStorage/WorldConfig  [v2.1]
--- Single source of truth for all generation parameters.
--- ============================================================
+-- WorldConfig.lua
+-- Central configuration for world generation, biomes, mobs, loot
+-- v2.2.0
 
 local WorldConfig = {}
 
-WorldConfig.Settings = {
-	WorldSizeX = 500,
-	WorldSizeZ = 500,
-	ChunkSize = 30,
-	BaseY = 0,
-	WaterLevel = -8,
-	-- 0 = random seed (persisted via DataStore); non-zero = manual override
-	Seed = 0,
-	TerrainScale   = 120,
-	MountainScale  = 60,
-	CaveScale      = 40,
-	TempScale      = 200,
-	MoistureScale  = 180,
-	TerrainAmplitude  = 20,
-	MountainAmplitude = 35,
-	CaveThreshold = 0.30,
-	CaveMinY      = -60,
-	CaveMaxY      = -10,
-	VoxelSize = 4,
-	TreeSpawnChance      = 0.04,
-	RockSpawnChance      = 0.02,
-	BushSpawnChance      = 0.03,
-	StructureSpawnChance = 0.005,
-	MaxConcurrentChunks = 10,
-	StreamingRadius = 300,
-	StreamingCheckInterval = 5,
-	WeatherCheckInterval = 8,
-}
+-- ─── Chunk & Terrain ────────────────────────────────────────────────────────
+WorldConfig.ChunkSize       = 64
+WorldConfig.RenderDistance  = 4
+WorldConfig.BaseHeight      = 20
+WorldConfig.NoiseScale      = 0.015
+WorldConfig.HeightAmplitude = 60
 
--- ============================================================
--- River Settings  [v2.1]
--- ============================================================
-WorldConfig.RiverSettings = {
-	SpringGridStep  = 80,
-	SpringMinHeight = 12,
-	MaxSteps        = 200,
-	StepSize        = 4,
-	RiverRadius     = 6,
-	MaxRivers       = 12,
-}
-
--- ============================================================
--- Dungeon Settings  [v2.1]
--- ============================================================
-WorldConfig.DungeonSettings = {
-	DungeonY       = -90,
-	DungeonWidth   = 80,
-	DungeonHeight  = 80,
-	GridStep       = 150,
-	MaxDungeons    = 6,
-	SpawnThreshold = 0.25,
-}
-
--- ============================================================
--- Ore vein definitions
--- ============================================================
-WorldConfig.OreVeins = {
-	{
-		Name       = "Coal",
-		Material   = Enum.Material.SmoothPlastic,
-		MinY       = -60,
-		MaxY       = -5,
-		Scale      = 18,
-		Threshold  = 0.72,
-		SeedOffset = 10000,
-	},
-	{
-		Name       = "Iron",
-		Material   = Enum.Material.Metal,
-		MinY       = -80,
-		MaxY       = -20,
-		Scale      = 14,
-		Threshold  = 0.78,
-		SeedOffset = 20000,
-	},
-	{
-		Name       = "Gold",
-		Material   = Enum.Material.Neon,
-		MinY       = -120,
-		MaxY       = -50,
-		Scale      = 12,
-		Threshold  = 0.84,
-		SeedOffset = 30000,
-	},
-	{
-		Name       = "Diamond",
-		Material   = Enum.Material.Ice,
-		MinY       = -160,
-		MaxY       = -90,
-		Scale      = 10,
-		Threshold  = 0.90,
-		SeedOffset = 40000,
-	},
-}
-
--- ============================================================
--- Biome definitions
--- ============================================================
+-- ─── Biomes ─────────────────────────────────────────────────────────────────
 WorldConfig.Biomes = {
+	{ name = "Ocean",       tempMin = -1,  tempMax = 0.1,  humMin = 0.6,  humMax = 1.0,  color = "Deep blue" },
+	{ name = "Desert",      tempMin = 0.6, tempMax = 1.0,  humMin = 0.0,  humMax = 0.3,  color = "Sand yellow" },
+	{ name = "Savanna",     tempMin = 0.5, tempMax = 0.9,  humMin = 0.3,  humMax = 0.6,  color = "Bright yellow" },
+	{ name = "Plains",      tempMin = 0.2, tempMax = 0.6,  humMin = 0.3,  humMax = 0.6,  color = "Bright green" },
+	{ name = "Forest",      tempMin = 0.1, tempMax = 0.6,  humMin = 0.5,  humMax = 0.8,  color = "Dark green" },
+	{ name = "Taiga",       tempMin = -0.3,tempMax = 0.2,  humMin = 0.4,  humMax = 0.8,  color = "Medium blue" },
+	{ name = "Tundra",      tempMin = -1,  tempMax = -0.2, humMin = 0.0,  humMax = 0.5,  color = "White" },
+	{ name = "Swamp",       tempMin = 0.2, tempMax = 0.5,  humMin = 0.7,  humMax = 1.0,  color = "Olive" },
+	{ name = "Jungle",      tempMin = 0.5, tempMax = 1.0,  humMin = 0.75, humMax = 1.0,  color = "Lime green" },
+	{ name = "Mountains",   tempMin = -0.5,tempMax = 0.3,  humMin = 0.2,  humMax = 0.7,  color = "Medium stone grey" },
+}
+
+-- ─── Ores ───────────────────────────────────────────────────────────────────
+WorldConfig.Ores = {
+	{ name = "Coal",     color = "Really black",    freq = 0.08, minDepth =  0, maxDepth = 60, veinSize = 5 },
+	{ name = "Iron",     color = "Reddish brown",   freq = 0.05, minDepth =  5, maxDepth = 50, veinSize = 4 },
+	{ name = "Gold",     color = "Bright yellow",   freq = 0.02, minDepth = 15, maxDepth = 35, veinSize = 3 },
+	{ name = "Diamond",  color = "Cyan",             freq = 0.01, minDepth = 25, maxDepth = 30, veinSize = 2 },
+	{ name = "Emerald",  color = "Bright green",    freq = 0.008,minDepth = 20, maxDepth = 28, veinSize = 2 },
+}
+
+-- ─── Dungeons ───────────────────────────────────────────────────────────────
+WorldConfig.DungeonFrequency  = 0.003
+WorldConfig.DungeonRoomCount  = { min = 5, max = 12 }
+WorldConfig.DungeonChestTiers = { "Common", "Uncommon", "Rare", "Legendary" }
+WorldConfig.DungeonChestWeights = { 50, 30, 15, 5 }
+
+-- ─── Loot Tables ────────────────────────────────────────────────────────────
+WorldConfig.LootTables = {
+	Common = {
+		minItems = 1, maxItems = 3,
+		pool = {
+			{ name = "Wooden Sword",   weight = 30, minQty = 1, maxQty = 1 },
+			{ name = "Bread",          weight = 40, minQty = 1, maxQty = 3 },
+			{ name = "Leather Armor",  weight = 20, minQty = 1, maxQty = 1 },
+			{ name = "Torch",          weight = 50, minQty = 2, maxQty = 5 },
+			{ name = "Gold Coin",      weight = 35, minQty = 1, maxQty = 10 },
+		},
+	},
+	Uncommon = {
+		minItems = 2, maxItems = 4,
+		pool = {
+			{ name = "Iron Sword",     weight = 25, minQty = 1, maxQty = 1 },
+			{ name = "Chain Mail",     weight = 20, minQty = 1, maxQty = 1 },
+			{ name = "Health Potion",  weight = 30, minQty = 1, maxQty = 2 },
+			{ name = "Gold Coin",      weight = 40, minQty = 5, maxQty = 20 },
+			{ name = "Magic Scroll",   weight = 15, minQty = 1, maxQty = 1 },
+		},
+	},
+	Rare = {
+		minItems = 2, maxItems = 5,
+		pool = {
+			{ name = "Steel Sword",    weight = 20, minQty = 1, maxQty = 1 },
+			{ name = "Plate Armor",    weight = 15, minQty = 1, maxQty = 1 },
+			{ name = "Mana Potion",    weight = 25, minQty = 1, maxQty = 2 },
+			{ name = "Gold Coin",      weight = 30, minQty = 20, maxQty = 50 },
+			{ name = "Enchanted Ring", weight = 10, minQty = 1, maxQty = 1 },
+		},
+	},
+	Legendary = {
+		minItems = 3, maxItems = 6,
+		pool = {
+			{ name = "Dragon Sword",   weight = 10, minQty = 1, maxQty = 1 },
+			{ name = "Void Staff",     weight = 8,  minQty = 1, maxQty = 1 },
+			{ name = "Phoenix Armor",  weight = 7,  minQty = 1, maxQty = 1 },
+			{ name = "Gold Coin",      weight = 30, minQty = 50, maxQty = 200 },
+			{ name = "Orb of Power",   weight = 5,  minQty = 1, maxQty = 1 },
+			{ name = "Ancient Tome",   weight = 12, minQty = 1, maxQty = 1 },
+		},
+	},
+}
+
+-- ─── Mob Spawns ─────────────────────────────────────────────────────────────
+WorldConfig.MobSpawnCap = 10  -- max mobs per player
+
+WorldConfig.MobSpawns = {
+	Default = {
+		{ name = "Zombie",  hp = 80,  color = "Bright green",    size = Vector3.new(2,3,2), biome = "Default" },
+		{ name = "Skeleton",hp = 60,  color = "White",            size = Vector3.new(2,3,2), biome = "Default" },
+	},
 	Forest = {
-		Name            = "Forest",
-		SurfaceMaterial = Enum.Material.Grass,
-		FillMaterial    = Enum.Material.Mud,
-		DebugColor      = Color3.fromRGB(34, 139, 34),
-		Trees           = true,
-		Rocks           = true,
-		Bushes          = true,
-		Structures      = { "Campfire", "WoodRuin" },
+		{ name = "Wolf",    hp = 50,  color = "Medium stone grey",size = Vector3.new(2,2,3), biome = "Forest"  },
+		{ name = "Spider",  hp = 40,  color = "Really black",     size = Vector3.new(3,2,3), biome = "Forest"  },
+		{ name = "Goblin",  hp = 45,  color = "Bright green",     size = Vector3.new(2,3,2), biome = "Forest"  },
 	},
 	Desert = {
-		Name            = "Desert",
-		SurfaceMaterial = Enum.Material.Sand,
-		FillMaterial    = Enum.Material.Sandstone,
-		DebugColor      = Color3.fromRGB(210, 180, 100),
-		Trees           = false,
-		Rocks           = true,
-		Bushes          = false,
-		Structures      = { "SandRuin", "Obelisk" },
-	},
-	Snow = {
-		Name            = "Snow",
-		SurfaceMaterial = Enum.Material.Snow,
-		FillMaterial    = Enum.Material.Glacier,
-		DebugColor      = Color3.fromRGB(220, 235, 255),
-		Trees           = true,
-		Rocks           = false,
-		Bushes          = false,
-		Structures      = { "Igloo", "IceSpike" },
-	},
-	Grassland = {
-		Name            = "Grassland",
-		SurfaceMaterial = Enum.Material.Grass,
-		FillMaterial    = Enum.Material.Ground,
-		DebugColor      = Color3.fromRGB(124, 200, 80),
-		Trees           = false,
-		Rocks           = false,
-		Bushes          = true,
-		Structures      = { "Campfire" },
-	},
-	Jungle = {
-		Name            = "Jungle",
-		SurfaceMaterial = Enum.Material.Grass,
-		FillMaterial    = Enum.Material.Mud,
-		DebugColor      = Color3.fromRGB(0, 100, 20),
-		Trees           = true,
-		Rocks           = false,
-		Bushes          = true,
-		Structures      = { "JungleTemple", "Campfire" },
+		{ name = "Scorpion",hp = 70,  color = "Sand yellow",      size = Vector3.new(3,2,3), biome = "Desert"  },
+		{ name = "Mummy",   hp = 100, color = "White",            size = Vector3.new(2,4,2), biome = "Desert"  },
 	},
 	Tundra = {
-		Name            = "Tundra",
-		SurfaceMaterial = Enum.Material.Snow,
-		FillMaterial    = Enum.Material.Ground,
-		DebugColor      = Color3.fromRGB(180, 200, 210),
-		Trees           = false,
-		Rocks           = true,
-		Bushes          = false,
-		Structures      = { "IceSpike" },
-	},
-	Volcano = {
-		Name            = "Volcano",
-		SurfaceMaterial = Enum.Material.Basalt,
-		FillMaterial    = Enum.Material.Basalt,
-		DebugColor      = Color3.fromRGB(120, 30, 10),
-		Trees           = false,
-		Rocks           = true,
-		Bushes          = false,
-		Structures      = { "LavaPillar", "AshRuin" },
+		{ name = "IceGolem",hp = 150, color = "Cyan",             size = Vector3.new(3,5,3), biome = "Tundra"  },
+		{ name = "Yeti",    hp = 120, color = "White",            size = Vector3.new(3,4,3), biome = "Tundra"  },
 	},
 	Swamp = {
-		Name            = "Swamp",
-		SurfaceMaterial = Enum.Material.Mud,
-		FillMaterial    = Enum.Material.Mud,
-		DebugColor      = Color3.fromRGB(60, 90, 50),
-		Trees           = true,
-		Rocks           = false,
-		Bushes          = true,
-		Structures      = { "WoodRuin", "Campfire" },
+		{ name = "Slime",   hp = 60,  color = "Lime green",       size = Vector3.new(3,3,3), biome = "Swamp"   },
+		{ name = "Witch",   hp = 80,  color = "Dark purple",      size = Vector3.new(2,4,2), biome = "Swamp"   },
+	},
+	Jungle = {
+		{ name = "Raptor",  hp = 90,  color = "Bright green",     size = Vector3.new(3,3,4), biome = "Jungle"  },
+		{ name = "Shaman",  hp = 70,  color = "Dark orange",      size = Vector3.new(2,4,2), biome = "Jungle"  },
+	},
+	Mountains = {
+		{ name = "Troll",   hp = 200, color = "Medium stone grey",size = Vector3.new(4,5,4), biome = "Mountains" },
+		{ name = "Eagle",   hp = 45,  color = "White",            size = Vector3.new(3,2,3), biome = "Mountains" },
 	},
 	Ocean = {
-		Name            = "Ocean",
-		SurfaceMaterial = Enum.Material.Sand,
-		FillMaterial    = Enum.Material.Sand,
-		DebugColor      = Color3.fromRGB(30, 80, 180),
-		Trees           = false,
-		Rocks           = false,
-		Bushes          = false,
-		Structures      = {},
+		{ name = "Kraken",  hp = 300, color = "Deep blue",        size = Vector3.new(6,4,6), biome = "Ocean"   },
 	},
 }
+
+-- ─── Rivers ─────────────────────────────────────────────────────────────────
+WorldConfig.RiverFrequency = 0.004
+WorldConfig.RiverWidth     = { min = 8, max = 20 }
+WorldConfig.RiverDepth     = 4
+
+-- ─── Weather ────────────────────────────────────────────────────────────────
+WorldConfig.WeatherCycle = 120  -- seconds per full cycle
+WorldConfig.WeatherTypes = { "Clear", "Cloudy", "Rain", "Thunderstorm", "Fog", "Blizzard" }
 
 return WorldConfig

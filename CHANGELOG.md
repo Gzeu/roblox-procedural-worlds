@@ -1,36 +1,25 @@
-# Changelog
+# Changelog — roblox-procedural-worlds
 
-## [2.1.0] — 2026-04-03
-
+## [v2.2.0] — 2026-04-03
 ### Added
-- **RiverCarver** — gradient-descent river tracing from mountain saddle points toward WaterLevel; configurable via `WorldConfig.RiverSettings`
-- **DungeonGenerator** — BSP-based underground dungeon generation with rooms, L-shaped corridors, and prop placement (`DungeonProps` folder); configurable via `WorldConfig.DungeonSettings`
-- **WeatherManager** (server) — biome-zone weather polling; fires `WeatherChanged` RemoteEvent per player when entering a new zone
-- **WeatherClient** (LocalScript) — rain, snow, and ash particle effects driven by `WeatherChanged` events
-- **SeedPersistence** — DataStore-backed seed storage; world topology preserved across server restarts; `ResetSeed()` for admin resets
-- **Rojo project file** (`rojo/default.project.json`) — maps all `src/*.lua` to correct Roblox service locations
-- `WorldConfig.RiverSettings` — spring grid step, min height, step size, carve radius, max rivers
-- `WorldConfig.DungeonSettings` — dungeon Y depth, BSP rect size, grid step, max count, spawn threshold
-- `WorldConfig.Settings.WeatherCheckInterval` — polling frequency for WeatherManager
+- `LootTable.lua` — weighted procedural loot generation with 4 tiers: Common, Uncommon, Rare, Legendary
+- `MobSpawner.lua` — biome-aware NPC spawning with per-player cap, heartbeat loop and auto-despawn at distance
+- `WorldConfig.lua` extended with `LootTables`, `MobSpawns` (8 biome pools), `MobSpawnCap`, `DungeonChestTiers` and `DungeonChestWeights`
+- `DungeonGenerator.lua` updated: chests now filled via `LootTable.FillChest()` with tier selected by weighted random
+- `WorldGenerator.lua` updated: `MobSpawner.Start(seed)` called during `Init()`
+- `rojo/default.project.json` updated with `LootTable` and `MobSpawner` module entries
 
 ### Changed
-- `WorldGenerator` updated to orchestrate RiverCarver, DungeonGenerator, WeatherManager, and SeedPersistence
-- `WorldConfig.Seed = 0` now defers to DataStore persistence instead of an ephemeral random seed
+- Dungeon rooms now include a neon torch-light placeholder part
+- Chest position randomized within room bounds
+- `WorldConfig` cleaned up and centralized (rivers, weather, dungeons, biomes all in one place)
 
-## [2.0.0] — 2026-03-01
+---
 
+## [v2.1.0] — Previous release
 ### Added
-- 9-biome system with inverse-square-distance blending
-- 3-octave FBM layered terrain (base + detail + fine + mountains)
-- 3D cave system with configurable Y depth band
-- Ore vein injection (Coal, Iron, Gold, Diamond)
-- Per-biome structure placement (campfires, igloos, ruins, temples, pillars)
-- Tree, rock, bush surface asset placement
-- Chunk streaming runtime (load/unload around players)
-- Full `--!strict` Luau type annotations throughout
-
-## [1.0.0] — 2025-12-01
-
-### Initial release
-- Basic flat terrain with Perlin height
-- Single biome, no streaming
+- Rivers (RiverCarver)
+- Dungeons (DungeonGenerator)
+- Weather system (WeatherManager + WeatherClient)
+- Seed persistence (SeedPersistence)
+- Rojo project config

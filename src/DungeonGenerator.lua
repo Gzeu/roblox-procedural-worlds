@@ -1,194 +1,161 @@
---!strict
--- ============================================================
--- MODULE: ReplicatedStorage/DungeonGenerator  [v2.1 NEW]
--- Underground dungeon room + corridor generation.
--- Uses BSP (Binary Space Partitioning) to place non-overlapping
--- rooms, then connects them with L-shaped corridors.
--- Rooms are carved into existing terrain using FillBlock(Air),
--- then floors are filled with SmoothPlastic and decorated with
--- dungeon props (torches, chests) from ReplicatedStorage/DungeonProps.
---
--- Usage:
---   DungeonGenerator.GenerateDungeons(seed)
---   Call from WorldGenerator AFTER terrain is generated.
--- ============================================================
+-- DungeonGenerator.lua
+-- Procedural dungeon room generation with loot-filled chests
+-- v2.2.0
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace         = game:GetService("Workspace")
-
-local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
-
-local Terrain = Workspace.Terrain
+local WorldConfig  = require(script.Parent.WorldConfig)
+local LootTable    = require(script.Parent.LootTable)
 
 local DungeonGenerator = {}
 
-type Rect = { x: number, z: number, w: number, h: number }
-type Room = { rect: Rect, centerX: number, centerZ: number, y: number }
+local ROOM_SIZE    = 20
+local CORRIDOR_W   = 4
+local WALL_HEIGHT  = 8
+local CHEST_CHANCE = 0.4  -- 40% per room
 
-local MIN_ROOM = 8
-local MAX_DEPTH = 4
-
-local function splitRect(rect: Rect, depth: number, seed: number, rooms: { Room })
-	if depth == 0 or (rect.w < MIN_ROOM * 2 and rect.h < MIN_ROOM * 2) then
-		local margin = 2
-		local rx = rect.x + margin
-		local rz = rect.z + margin
-		local rw = math.max(MIN_ROOM, rect.w - margin * 2)
-		local rh = math.max(MIN_ROOM, rect.h - margin * 2)
-		local room: Room = {
-			rect    = { x = rx, z = rz, w = rw, h = rh },
-			centerX = rx + rw / 2,
-			centerZ = rz + rh / 2,
-			y       = 0,
-		}
-		table.insert(rooms, room)
-		return
+local function selectTier(rng)
+	local weights = WorldConfig.DungeonChestWeights
+	local tiers   = WorldConfig.DungeonChestTiers
+	local total   = 0
+	for _, w in ipairs(weights) do total = total + w end
+	local roll = rng:NextNumber() * total
+	local cum  = 0
+	for i, w in ipairs(weights) do
+		cum = cum + w
+		if roll <= cum then return tiers[i] end
 	end
-
-	local splitNoise = math.noise(seed * 0.001 + rect.x * 0.01, rect.z * 0.01)
-	local splitHoriz = (splitNoise > 0 and rect.h >= rect.w) or (rect.h > rect.w * 1.25)
-
-	if splitHoriz then
-		local splitAt = rect.z + math.floor(rect.h * 0.35 + math.abs(splitNoise) * rect.h * 0.3)
-		splitRect({ x = rect.x, z = rect.z, w = rect.w, h = splitAt - rect.z }, depth - 1, seed + 1, rooms)
-		splitRect({ x = rect.x, z = splitAt, w = rect.w, h = (rect.z + rect.h) - splitAt }, depth - 1, seed + 2, rooms)
-	else
-		local splitAt = rect.x + math.floor(rect.w * 0.35 + math.abs(splitNoise) * rect.w * 0.3)
-		splitRect({ x = rect.x, z = rect.z, w = splitAt - rect.x, h = rect.h }, depth - 1, seed + 3, rooms)
-		splitRect({ x = splitAt, z = rect.z, w = (rect.x + rect.w) - splitAt, h = rect.h }, depth - 1, seed + 4, rooms)
-	end
+	return tiers[1]
 end
 
-local function carveRoom(room: Room, vSize: number)
-	local halfV = vSize * 0.5
-	local roomHeight = vSize * 4
+local function buildRoom(origin, rng, dungeonSeed, roomIndex)
+	local roomModel = Instance.new("Model")
+	roomModel.Name  = "DungeonRoom_" .. roomIndex
 
-	for lx = 0, room.rect.w - 1, vSize do
-		for lz = 0, room.rect.h - 1, vSize do
-			for ly = 0, roomHeight, vSize do
-				local wx = room.rect.x + lx
-				local wz = room.rect.z + lz
-				local wy = room.y + ly
+	-- Floor
+	local floor = Instance.new("Part")
+	floor.Size      = Vector3.new(ROOM_SIZE, 1, ROOM_SIZE)
+	floor.CFrame    = CFrame.new(origin + Vector3.new(0, -0.5, 0))
+	floor.BrickColor = BrickColor.new("Dark stone grey")
+	floor.Anchored  = true
+	floor.Name      = "Floor"
+	floor.Parent    = roomModel
 
-				local isFloor = (ly == 0)
-				local material = if isFloor then Enum.Material.SmoothPlastic else Enum.Material.Air
-
-				local center = Vector3.new(wx + halfV, wy + halfV, wz + halfV)
-				local ok, _ = pcall(
-					Terrain.FillBlock, Terrain,
-					CFrame.new(center),
-					Vector3.new(vSize, vSize, vSize),
-					material
-				)
-				if not ok then break end
-			end
-		end
-	end
-end
-
-local function carveCorridor(r1: Room, r2: Room, vSize: number)
-	local halfV = vSize * 0.5
-	local corrW = vSize * 2
-	local corrH = vSize * 3
-	local y = r1.y
-
-	local x1 = math.min(r1.centerX, r2.centerX)
-	local x2 = math.max(r1.centerX, r2.centerX)
-	for wx = x1, x2, vSize do
-		for lz = 0, corrW - 1, vSize do
-			for ly = vSize, corrH, vSize do
-				local center = Vector3.new(wx + halfV, y + ly + halfV, r1.centerZ + lz + halfV)
-				pcall(Terrain.FillBlock, Terrain, CFrame.new(center), Vector3.new(vSize, vSize, vSize), Enum.Material.Air)
-			end
-		end
-	end
-
-	local z1 = math.min(r1.centerZ, r2.centerZ)
-	local z2 = math.max(r1.centerZ, r2.centerZ)
-	for wz = z1, z2, vSize do
-		for lx = 0, corrW - 1, vSize do
-			for ly = vSize, corrH, vSize do
-				local center = Vector3.new(r2.centerX + lx + halfV, y + ly + halfV, wz + halfV)
-				pcall(Terrain.FillBlock, Terrain, CFrame.new(center), Vector3.new(vSize, vSize, vSize), Enum.Material.Air)
-			end
-		end
-	end
-end
-
-local function placeDungeonProps(room: Room)
-	local propsFolder = ReplicatedStorage:FindFirstChild("DungeonProps")
-	if not propsFolder then return end
-
-	local corners = {
-		Vector3.new(room.rect.x + 2, room.y + 6, room.rect.z + 2),
-		Vector3.new(room.rect.x + room.rect.w - 2, room.y + 6, room.rect.z + 2),
-		Vector3.new(room.rect.x + 2, room.y + 6, room.rect.z + room.rect.h - 2),
-		Vector3.new(room.rect.x + room.rect.w - 2, room.y + 6, room.rect.z + room.rect.h - 2),
+	-- Walls (N, S, E, W)
+	local wallDefs = {
+		{ pos = Vector3.new(0,        WALL_HEIGHT/2,  ROOM_SIZE/2),  size = Vector3.new(ROOM_SIZE, WALL_HEIGHT, 1) },
+		{ pos = Vector3.new(0,        WALL_HEIGHT/2, -ROOM_SIZE/2),  size = Vector3.new(ROOM_SIZE, WALL_HEIGHT, 1) },
+		{ pos = Vector3.new( ROOM_SIZE/2, WALL_HEIGHT/2, 0),         size = Vector3.new(1, WALL_HEIGHT, ROOM_SIZE) },
+		{ pos = Vector3.new(-ROOM_SIZE/2, WALL_HEIGHT/2, 0),         size = Vector3.new(1, WALL_HEIGHT, ROOM_SIZE) },
 	}
-	for _, pos in corners do
-		local torch = propsFolder:FindFirstChild("Torch") :: Model?
-		if torch then
-			local clone = torch:Clone()
-			if clone.PrimaryPart then
-				clone:SetPrimaryPartCFrame(CFrame.new(pos))
-				clone.Parent = Workspace:FindFirstChild("ProceduralAssets") or Workspace
-			else
-				clone:Destroy()
-			end
-		end
+	for i, wd in ipairs(wallDefs) do
+		local wall = Instance.new("Part")
+		wall.Size      = wd.size
+		wall.CFrame    = CFrame.new(origin + wd.pos)
+		wall.BrickColor = BrickColor.new("Medium stone grey")
+		wall.Anchored  = true
+		wall.Name      = "Wall_" .. i
+		wall.Parent    = roomModel
 	end
 
-	if math.random() < 0.35 then
-		local chest = propsFolder:FindFirstChild("Chest") :: Model?
-		if chest then
-			local clone = chest:Clone()
-			local centerPos = Vector3.new(room.centerX, room.y + 2, room.centerZ)
-			if clone.PrimaryPart then
-				clone:SetPrimaryPartCFrame(CFrame.new(centerPos))
-				clone.Parent = Workspace:FindFirstChild("ProceduralAssets") or Workspace
-			else
-				clone:Destroy()
-			end
-		end
+	-- Ceiling
+	local ceil = Instance.new("Part")
+	ceil.Size      = Vector3.new(ROOM_SIZE, 1, ROOM_SIZE)
+	ceil.CFrame    = CFrame.new(origin + Vector3.new(0, WALL_HEIGHT + 0.5, 0))
+	ceil.BrickColor = BrickColor.new("Dark stone grey")
+	ceil.Anchored  = true
+	ceil.Name      = "Ceiling"
+	ceil.Parent    = roomModel
+
+	-- Torch light (simple part as placeholder)
+	local torchPart = Instance.new("Part")
+	torchPart.Size      = Vector3.new(0.4, 0.4, 0.4)
+	torchPart.CFrame    = CFrame.new(origin + Vector3.new(0, WALL_HEIGHT - 1, 0))
+	torchPart.BrickColor = BrickColor.new("Bright orange")
+	torchPart.Anchored  = true
+	torchPart.Name      = "TorchLight"
+	torchPart.Material  = Enum.Material.Neon
+	torchPart.Parent    = roomModel
+
+	-- Chest (random chance)
+	if rng:NextNumber() < CHEST_CHANCE then
+		local tier      = selectTier(rng)
+		local chestSeed = dungeonSeed + roomIndex * 997
+
+		local chest = Instance.new("Part")
+		chest.Size      = Vector3.new(2, 1.5, 1)
+		chest.CFrame    = CFrame.new(origin + Vector3.new(
+			(rng:NextNumber() - 0.5) * (ROOM_SIZE - 4),
+			0.75,
+			(rng:NextNumber() - 0.5) * (ROOM_SIZE - 4)
+		))
+		chest.BrickColor = BrickColor.new("Bright orange")
+		chest.Anchored  = true
+		chest.Name      = "Chest_" .. tier
+		chest.Parent    = roomModel
+
+		LootTable.FillChest(chest, tier, chestSeed)
 	end
+
+	return roomModel
 end
 
-function DungeonGenerator.GenerateDungeons(seed: number)
-	local cfg     = WorldConfig.Settings
-	local dungCfg = WorldConfig.DungeonSettings
-	local vSize   = cfg.VoxelSize
-	local halfX   = cfg.WorldSizeX / 2
-	local halfZ   = cfg.WorldSizeZ / 2
+local function buildCorridor(from, to)
+	local mid    = (from + to) / 2
+	local length = (to - from).Magnitude
+	local dir    = (to - from).Unit
 
-	local placed = 0
+	local corr = Instance.new("Part")
+	corr.Size    = Vector3.new(CORRIDOR_W, 1, length)
+	corr.CFrame  = CFrame.new(mid, mid + dir) * CFrame.new(0, -0.5, 0)
+	corr.BrickColor = BrickColor.new("Dark stone grey")
+	corr.Anchored = true
+	corr.Name    = "Corridor"
+	return corr
+end
 
-	for gx = -halfX, halfX - dungCfg.GridStep, dungCfg.GridStep do
-		if placed >= dungCfg.MaxDungeons then break end
-		for gz = -halfZ, halfZ - dungCfg.GridStep, dungCfg.GridStep do
-			if placed >= dungCfg.MaxDungeons then break end
+function DungeonGenerator.Generate(originPos, seed)
+	local rng       = Random.new(seed)
+	local cfg       = WorldConfig.DungeonRoomCount
+	local roomCount = rng:NextInteger(cfg.min, cfg.max)
 
-			local n = math.noise(seed * 0.0001 + gx * 0.003, gz * 0.003)
-			if n < dungCfg.SpawnThreshold then continue end
+	local dungeonModel = Instance.new("Model")
+	dungeonModel.Name  = "Dungeon_" .. seed
 
-			local jx = gx + math.floor(math.noise(seed + gx, gz) * dungCfg.GridStep * 0.3)
-			local jz = gz + math.floor(math.noise(seed + gz, gx) * dungCfg.GridStep * 0.3)
+	local positions = {}
+	local spread    = ROOM_SIZE * 2.5
 
-			placed += 1
-			task.spawn(function()
-				local rooms: { Room } = {}
-				splitRect({ x = jx, z = jz, w = dungCfg.DungeonWidth, h = dungCfg.DungeonHeight }, MAX_DEPTH, seed + gx + gz, rooms)
-				for _, room in rooms do room.y = dungCfg.DungeonY end
-				for _, room in rooms do
-					carveRoom(room, vSize)
-					placeDungeonProps(room)
-				end
-				for i = 1, #rooms - 1 do
-					carveCorridor(rooms[i], rooms[i + 1], vSize)
-				end
-				print(string.format("[DungeonGenerator] Dungeon @ (%d,%d) with %d rooms.", jx, jz, #rooms))
-			end)
+	for i = 1, roomCount do
+		local angle  = (i / roomCount) * math.pi * 2 + rng:NextNumber() * 0.8
+		local radius = spread + rng:NextNumber() * spread * 0.5
+		local pos    = originPos + Vector3.new(
+			math.cos(angle) * radius,
+			0,
+			math.sin(angle) * radius
+		)
+		positions[i] = pos
+
+		local room = buildRoom(pos, rng, seed, i)
+		room.Parent = dungeonModel
+
+		-- Connect to previous room with a corridor
+		if i > 1 then
+			local corr = buildCorridor(positions[i-1], pos)
+			corr.Parent = dungeonModel
 		end
 	end
+
+	dungeonModel.Parent = workspace
+	return dungeonModel
+end
+
+function DungeonGenerator.TrySpawnAt(x, z, seed)
+	local hash  = (x * 374761393 + z * 1103515245 + seed) % 1000000
+	local roll  = (hash / 1000000)
+	if roll < WorldConfig.DungeonFrequency then
+		local origin = Vector3.new(x, -30, z)
+		DungeonGenerator.Generate(origin, hash)
+		return true
+	end
+	return false
 end
 
 return DungeonGenerator
