@@ -1,7 +1,6 @@
 -- WorldGenerator.lua
--- Master orchestrator: terrain, biomes, ores, rivers, dungeons,
--- weather, mobs, quests, admin panel, LOD
--- v2.3.0
+-- Master orchestrator: all subsystems
+-- v2.4.0
 
 local WorldConfig      = require(script.Parent.WorldConfig)
 local BiomeResolver    = require(script.Parent.BiomeResolver)
@@ -16,6 +15,9 @@ local MobSpawner       = require(script.Parent.MobSpawner)
 local QuestSystem      = require(script.Parent.QuestSystem)
 local AdminPanel       = require(script.Parent.AdminPanel)
 local LODManager       = require(script.Parent.LODManager)
+local CombatSystem     = require(script.Parent.CombatSystem)
+local Inventory        = require(script.Parent.Inventory)
+local DayNightCycle    = require(script.Parent.DayNightCycle)
 
 local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -26,17 +28,9 @@ local currentSeed  = 0
 local initialized  = false
 local activeChunks = {}
 
--- ── Seed ──────────────────────────────────────────────────────────────────
-function WorldGenerator.GetSeed()
-	return currentSeed
-end
+function WorldGenerator.GetSeed()     return currentSeed end
+function WorldGenerator.SetSeed(seed) currentSeed = seed; SeedPersistence.Save(seed) end
 
-function WorldGenerator.SetSeed(seed)
-	currentSeed = seed
-	SeedPersistence.Save(seed)
-end
-
--- ── Chunk Generation ──────────────────────────────────────────────────────
 function WorldGenerator.GenerateChunk(cx, cz)
 	local key = cx .. "," .. cz
 	if activeChunks[key] then return end
@@ -46,21 +40,17 @@ function WorldGenerator.GenerateChunk(cx, cz)
 	local worldZ = cz * WorldConfig.ChunkSize
 
 	local chunkModel = ChunkHandler.BuildChunk(cx, cz, currentSeed)
-	if chunkModel then
-		LODManager.RegisterChunk(cx, cz, chunkModel)
-	end
+	if chunkModel then LODManager.RegisterChunk(cx, cz, chunkModel) end
 
 	OreGenerator.PlaceOres(worldX, worldZ, currentSeed)
 	RiverCarver.CarveAt(worldX, worldZ, currentSeed)
 	DungeonGenerator.TrySpawnAt(worldX, worldZ, currentSeed)
 end
 
--- ── Init ──────────────────────────────────────────────────────────────────
 function WorldGenerator.Init(forceSeed)
 	if initialized then return end
 	initialized = true
 
-	-- Resolve seed
 	local saved = SeedPersistence.Load()
 	if forceSeed then
 		currentSeed = forceSeed
@@ -71,26 +61,34 @@ function WorldGenerator.Init(forceSeed)
 		SeedPersistence.Save(currentSeed)
 	end
 
-	if WorldConfig.Debug then
-		warn("[WorldGenerator] Seed:", currentSeed)
-	end
+	if WorldConfig.Debug then warn("[WorldGenerator] Seed:", currentSeed) end
 
-	-- Boot subsystems
+	-- Boot all subsystems
 	WeatherManager.Start(currentSeed)
 	StreamingManager.Start(currentSeed)
 	MobSpawner.Start(currentSeed)
 	QuestSystem.Start(currentSeed)
+	CombatSystem.Start()
+	Inventory.Start()
+	DayNightCycle.Start()
 	LODManager.Start()
 	AdminPanel.Init(WorldGenerator, MobSpawner)
 
-	-- Initial chunk load around spawn
+	-- Day/night mob density: more mobs at night
+	DayNightCycle.OnDusk(function()
+		WorldConfig.MobSpawnCap = 18
+	end)
+	DayNightCycle.OnDawn(function()
+		WorldConfig.MobSpawnCap = 10
+	end)
+
+	-- Initial chunks
 	for dx = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
 		for dz = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
 			WorldGenerator.GenerateChunk(dx, dz)
 		end
 	end
 
-	-- Dynamic chunk loading per player
 	Players.PlayerAdded:Connect(function(player)
 		player.CharacterAdded:Connect(function()
 			WorldGenerator._TrackPlayer(player)
@@ -98,26 +96,20 @@ function WorldGenerator.Init(forceSeed)
 	end)
 
 	for _, player in ipairs(Players:GetPlayers()) do
-		if player.Character then
-			WorldGenerator._TrackPlayer(player)
-		end
+		if player.Character then WorldGenerator._TrackPlayer(player) end
 	end
 end
 
--- ── Player Tracking ───────────────────────────────────────────────────────
 function WorldGenerator._TrackPlayer(player)
 	local lastCX, lastCZ = nil, nil
-
 	RunService.Heartbeat:Connect(function()
 		local char = player.Character
 		if not char then return end
 		local root = char:FindFirstChild("HumanoidRootPart")
 		if not root then return end
-
 		local pos = root.Position
 		local cx  = math.floor(pos.X / WorldConfig.ChunkSize)
 		local cz  = math.floor(pos.Z / WorldConfig.ChunkSize)
-
 		if cx ~= lastCX or cz ~= lastCZ then
 			lastCX, lastCZ = cx, cz
 			for dx = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do

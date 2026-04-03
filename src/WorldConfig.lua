@@ -1,15 +1,14 @@
 -- WorldConfig.lua
 -- Central configuration for ALL world systems
--- v2.3.0
+-- v2.4.0
 
 local WorldConfig = {}
 
 -- ── Debug ──────────────────────────────────────────────────────────────────
-WorldConfig.Debug = false  -- set true to enable warn() logs in all modules
+WorldConfig.Debug = false
 
 -- ── Admin ──────────────────────────────────────────────────────────────────
-WorldConfig.AdminUserIds = {}  -- add UserId numbers here for admin access
--- Example: WorldConfig.AdminUserIds = { 12345678, 87654321 }
+WorldConfig.AdminUserIds = {}
 
 -- ── Chunk & Terrain ────────────────────────────────────────────────────────
 WorldConfig.ChunkSize       = 64
@@ -30,6 +29,34 @@ WorldConfig.Biomes = {
 	{ name = "Swamp",     tempMin = 0.2,  tempMax = 0.5,  humMin = 0.7,  humMax = 1.0,  color = "Olive" },
 	{ name = "Jungle",    tempMin = 0.5,  tempMax = 1.0,  humMin = 0.75, humMax = 1.0,  color = "Lime green" },
 	{ name = "Mountains", tempMin = -0.5, tempMax = 0.3,  humMin = 0.2,  humMax = 0.7,  color = "Medium stone grey" },
+}
+
+-- ── Combat ─────────────────────────────────────────────────────────────────
+WorldConfig.Combat = {
+	BaseDamage      = 15,
+	AttackRange     = 8,
+	AttackCooldown  = 0.6,   -- seconds between attacks
+	KnockbackForce  = 40,
+	MobRespawnTime  = 30,    -- seconds after death before model is destroyed
+}
+
+-- ── Inventory ───────────────────────────────────────────────────────────────
+WorldConfig.Inventory = {
+	MaxSlots = 20,
+	Weapons  = {
+		["Wooden Sword"]  = { damage = 10,  range = 7  },
+		["Iron Sword"]    = { damage = 20,  range = 8  },
+		["Steel Sword"]   = { damage = 35,  range = 8  },
+		["Dragon Sword"]  = { damage = 80,  range = 10 },
+		["Void Staff"]    = { damage = 65,  range = 15 },
+	},
+}
+
+-- ── Day/Night ───────────────────────────────────────────────────────────────
+WorldConfig.DayNight = {
+	CycleMinutes = 20,    -- real-time minutes per full in-game day
+	StartHour    = 8,     -- starting time of day (0-24)
+	Latitude     = 41,    -- geographic latitude for sun angle
 }
 
 -- ── Ores ───────────────────────────────────────────────────────────────────
@@ -94,7 +121,6 @@ WorldConfig.LootTables = {
 
 -- ── Mob Spawns ─────────────────────────────────────────────────────────────
 WorldConfig.MobSpawnCap = 10
-
 WorldConfig.MobSpawns = {
 	Default   = {
 		{ name = "Zombie",   hp = 80,  color = "Bright green",     size = Vector3.new(2,3,2), biome = "Default" },
