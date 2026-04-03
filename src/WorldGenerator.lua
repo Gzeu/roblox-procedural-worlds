@@ -1,6 +1,7 @@
 -- WorldGenerator.lua
--- Main orchestrator: terrain, biomes, ores, rivers, dungeons, weather, mobs
--- v2.2.0
+-- Master orchestrator: terrain, biomes, ores, rivers, dungeons,
+-- weather, mobs, quests, admin panel, LOD
+-- v2.3.0
 
 local WorldConfig      = require(script.Parent.WorldConfig)
 local BiomeResolver    = require(script.Parent.BiomeResolver)
@@ -12,26 +13,30 @@ local WeatherManager   = require(script.Parent.WeatherManager)
 local SeedPersistence  = require(script.Parent.SeedPersistence)
 local StreamingManager = require(script.Parent.StreamingManager)
 local MobSpawner       = require(script.Parent.MobSpawner)
+local QuestSystem      = require(script.Parent.QuestSystem)
+local AdminPanel       = require(script.Parent.AdminPanel)
+local LODManager       = require(script.Parent.LODManager)
 
-local Players  = game:GetService("Players")
+local Players    = game:GetService("Players")
 local RunService = game:GetService("RunService")
 
 local WorldGenerator = {}
 
-local currentSeed    = 0
-local initialized    = false
-local activeChunks   = {}
+local currentSeed  = 0
+local initialized  = false
+local activeChunks = {}
 
--- ─── Seed ───────────────────────────────────────────────────────────────────
+-- ── Seed ──────────────────────────────────────────────────────────────────
 function WorldGenerator.GetSeed()
 	return currentSeed
 end
 
 function WorldGenerator.SetSeed(seed)
 	currentSeed = seed
+	SeedPersistence.Save(seed)
 end
 
--- ─── Chunk Generation ───────────────────────────────────────────────────────
+-- ── Chunk Generation ──────────────────────────────────────────────────────
 function WorldGenerator.GenerateChunk(cx, cz)
 	local key = cx .. "," .. cz
 	if activeChunks[key] then return end
@@ -40,20 +45,17 @@ function WorldGenerator.GenerateChunk(cx, cz)
 	local worldX = cx * WorldConfig.ChunkSize
 	local worldZ = cz * WorldConfig.ChunkSize
 
-	-- Terrain
-	ChunkHandler.BuildChunk(cx, cz, currentSeed)
+	local chunkModel = ChunkHandler.BuildChunk(cx, cz, currentSeed)
+	if chunkModel then
+		LODManager.RegisterChunk(cx, cz, chunkModel)
+	end
 
-	-- Ores
 	OreGenerator.PlaceOres(worldX, worldZ, currentSeed)
-
-	-- River carve pass
 	RiverCarver.CarveAt(worldX, worldZ, currentSeed)
-
-	-- Dungeon spawn attempt
 	DungeonGenerator.TrySpawnAt(worldX, worldZ, currentSeed)
 end
 
--- ─── Init ───────────────────────────────────────────────────────────────────
+-- ── Init ──────────────────────────────────────────────────────────────────
 function WorldGenerator.Init(forceSeed)
 	if initialized then return end
 	initialized = true
@@ -69,12 +71,17 @@ function WorldGenerator.Init(forceSeed)
 		SeedPersistence.Save(currentSeed)
 	end
 
-	print("[WorldGenerator] Seed:", currentSeed)
+	if WorldConfig.Debug then
+		warn("[WorldGenerator] Seed:", currentSeed)
+	end
 
-	-- Start subsystems
+	-- Boot subsystems
 	WeatherManager.Start(currentSeed)
 	StreamingManager.Start(currentSeed)
 	MobSpawner.Start(currentSeed)
+	QuestSystem.Start(currentSeed)
+	LODManager.Start()
+	AdminPanel.Init(WorldGenerator, MobSpawner)
 
 	-- Initial chunk load around spawn
 	for dx = -WorldConfig.RenderDistance, WorldConfig.RenderDistance do
@@ -83,7 +90,7 @@ function WorldGenerator.Init(forceSeed)
 		end
 	end
 
-	-- Track players for dynamic loading
+	-- Dynamic chunk loading per player
 	Players.PlayerAdded:Connect(function(player)
 		player.CharacterAdded:Connect(function()
 			WorldGenerator._TrackPlayer(player)
@@ -97,7 +104,7 @@ function WorldGenerator.Init(forceSeed)
 	end
 end
 
--- ─── Player Tracking ────────────────────────────────────────────────────────
+-- ── Player Tracking ───────────────────────────────────────────────────────
 function WorldGenerator._TrackPlayer(player)
 	local lastCX, lastCZ = nil, nil
 
