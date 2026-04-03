@@ -1,8 +1,8 @@
 # 🌍 roblox-procedural-worlds
 
-> A fully modular, seed-driven procedural world generation framework for Roblox — built with Lua, designed for scalability.
+> A fully modular, seed-driven procedural world generation framework for Roblox — with a complete AI layer for mob intelligence and dynamic difficulty.
 
-[![Version](https://img.shields.io/badge/version-2.5.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-3.0.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Roblox](https://img.shields.io/badge/platform-Roblox%20Studio-red)](#)
 
@@ -20,56 +20,112 @@
 | `RiverCarver` | Midpoint displacement river paths |
 | `VillageGenerator` | Procedural NPC village layouts |
 | `DungeonGenerator` | BSP room-based dungeon system |
-| `MobSpawner` | Biome-aware mob spawning with AI |
+| `MobSpawner` | Biome-aware mob spawning |
 | `OreGenerator` | Depth-based ore vein generation |
 | `DayNightCycle` | Configurable 8-minute in-game day |
 | `WeatherManager` + `WeatherClient` | Server/client weather sync |
 | `CombatSystem` | Hitbox detection, damage, knockback |
 | `QuestSystem` | Dynamic quest assignment & tracking |
 | `NPCDialogue` + `NPCDialogueClient` | Branching dialogue trees |
-| `Inventory` | Player inventory with slot management |
-| `PlayerPersistence` | DataStore-backed player save/load |
+| `Inventory` | Slot-based player inventory |
+| `PlayerPersistence` | DataStore-backed save/load |
 | `LootTable` | Weighted loot drop system |
 | `AdminPanel` | In-game admin controls |
 | `AssetPlacer` | Biome-aware asset scatter |
 | `StructurePlacer` | Pre-built structure placement |
 | `SeedPersistence` | World seed save/restore |
-| **`EventBus`** ⭐ | Pub/sub event system for decoupled modules |
-| **`CraftingSystem`** ⭐ | Recipe-based crafting with level requirements |
-| **`TeleportManager`** ⭐ | Named waypoints + cross-server teleport |
-| **`ParticleEffects`** ⭐ | Preset particle emitter manager |
+| `EventBus` | Pub/sub event system |
+| `CraftingSystem` | Recipe-based crafting |
+| `TeleportManager` | Named waypoints + cross-server teleport |
+| `ParticleEffects` | Preset particle emitter manager |
+| **`MobAI`** 🤖 | FSM: Idle/Patrol/Alert/Chase/Attack/Flee/Dead |
+| **`AINavigator`** 🤖 | PathfindingService wrapper with recompute |
+| **`BehaviorTree`** 🤖 | Composable BT engine (8 node types) |
+| **`AIDirector`** 🤖 | Dynamic Difficulty Adjustment (6 tiers) |
+| **`AIConfig`** 🤖 | Per-mob configs + BT presets |
 
-> ⭐ = Added in v2.5
+> 🤖 = Added in v3.0
 
 ---
 
 ## 🚀 Quick Start
 
-1. Clone or copy into your Roblox Studio project (via [Rojo](https://rojo.space) — see `rojo/` folder)
+1. Clone/copy into Roblox Studio via [Rojo](https://rojo.space) (see `rojo/` folder)
 2. Place `src/` contents into `ServerScriptService`
-3. Configure `WorldConfig.lua` to your preferences
-4. Hit **Play** — the world generates automatically from seed
+3. Configure `WorldConfig.lua`
+4. Hit **Play** — world generates and AI activates automatically
 
 ```lua
--- Example: craft an item
-local CraftingSystem = require(game.ServerScriptService.CraftingSystem)
-local ok, msg = CraftingSystem.craft(player, "IronPickaxe", playerLevel)
-print(msg) -- "Crafted IronPickaxe successfully!"
+-- Spawn a mob with AI
+local MobAI    = require(game.ServerScriptService.MobAI)
+local AIConfig = require(game.ServerScriptService.AIConfig)
+local AIDirector = require(game.ServerScriptService.AIDirector)
 
--- Example: teleport to a waypoint
-local TeleportManager = require(game.ServerScriptService.TeleportManager)
-TeleportManager.teleportToWaypoint(player, "Market")
+-- Apply dynamic difficulty scaling for the nearest player
+local scaledConfig = AIDirector.applyScaling(player, AIConfig.Mobs.Goblin)
 
--- Example: emit a particle burst
-local ParticleEffects = require(game.ServerScriptService.ParticleEffects)
-ParticleEffects.emit(character.HumanoidRootPart, "Heal", 0.5)
+local mob = MobAI.new(goblinModel, scaledConfig)
+mob:start()
 
--- Example: subscribe to an event
-local EventBus = require(game.ServerScriptService.EventBus)
-EventBus.on("CraftingSystem:CraftSuccess", function(player, recipe)
-    print(player.Name .. " crafted: " .. recipe)
-end)
+-- Build a custom Behavior Tree
+local BT = require(game.ServerScriptService.BehaviorTree)
+local tree = BT.Tree(
+    BT.Sequence({
+        BT.Condition(function(ctx) return ctx.dist < 10 end),
+        BT.Cooldown(
+            BT.Action(function(ctx)
+                ctx.mob:attack()
+                return "SUCCESS"
+            end),
+            1.5
+        )
+    })
+)
+tree:tick({ mob = mob, dist = 8 })
+
+-- Check player difficulty tier
+print(AIDirector.getTierName(player))  -- "Normal", "Hard", etc.
 ```
+
+---
+
+## 🤖 AI Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    AIDirector                       │
+│  Tracks kill/death → score (-1..1) → tier (1-6)    │
+│  Scales: damage, HP, spawnRate per player           │
+└──────────────────────┬──────────────────────────────┘
+                       │ applyScaling(player, config)
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│                     MobAI (FSM)                     │
+│  Idle → Patrol → Alert → Chase → Attack → Flee      │
+│                     ↕ delegates movement            │
+│                  AINavigator                        │
+│         PathfindingService + recompute              │
+└──────────────────────┬──────────────────────────────┘
+                       │ optional per-tick decisions
+                       ▼
+┌─────────────────────────────────────────────────────┐
+│               BehaviorTree (optional)               │
+│  Sequence / Selector / Parallel / Condition         │
+│  Action / Inverter / Repeater / Cooldown            │
+└─────────────────────────────────────────────────────┘
+         All modules communicate via EventBus
+```
+
+### Dynamic Difficulty Tiers
+
+| Tier | Score | Damage | HP | Spawn Rate | Loot Bonus |
+|---|---|---|---|---|---|
+| Trivial  | < -0.60 | ×0.5 | ×0.6 | ×0.6 | +0% |
+| Easy     | < -0.30 | ×0.75 | ×0.8 | ×0.8 | +0% |
+| Normal   | 0.00    | ×1.0 | ×1.0 | ×1.0 | +0% |
+| Hard     | > 0.30  | ×1.3 | ×1.3 | ×1.2 | +10% |
+| Extreme  | > 0.60  | ×1.7 | ×1.7 | ×1.5 | +25% |
+| Nightmare| > 0.85  | ×2.2 | ×2.2 | ×1.8 | +40% |
 
 ---
 
@@ -77,10 +133,10 @@ end)
 
 ```
 roblox-procedural-worlds/
-├── src/                    # All Lua modules (ServerScriptService)
-│   ├── init.server.lua     # Bootstrap entry point
-│   ├── WorldConfig.lua     # Central configuration
-│   ├── EventBus.lua        # Pub/sub event system (v2.5)
+├── src/
+│   ├── init.server.lua
+│   ├── WorldConfig.lua
+│   ├── EventBus.lua
 │   ├── WorldGenerator.lua
 │   ├── ChunkHandler.lua
 │   ├── BiomeResolver.lua
@@ -92,24 +148,26 @@ roblox-procedural-worlds/
 │   ├── MobSpawner.lua
 │   ├── OreGenerator.lua
 │   ├── DayNightCycle.lua
-│   ├── WeatherManager.lua
-│   ├── WeatherClient.lua
+│   ├── WeatherManager.lua / WeatherClient.lua
 │   ├── CombatSystem.lua
 │   ├── QuestSystem.lua
-│   ├── NPCDialogue.lua
-│   ├── NPCDialogueClient.lua
+│   ├── NPCDialogue.lua / NPCDialogueClient.lua
 │   ├── Inventory.lua
 │   ├── PlayerPersistence.lua
 │   ├── LootTable.lua
 │   ├── AdminPanel.lua
-│   ├── AssetPlacer.lua
-│   ├── StructurePlacer.lua
+│   ├── AssetPlacer.lua / StructurePlacer.lua
 │   ├── SeedPersistence.lua
-│   ├── CraftingSystem.lua  # (v2.5)
-│   ├── TeleportManager.lua # (v2.5)
-│   └── ParticleEffects.lua # (v2.5)
-├── rojo/                   # Rojo project config
-├── docs/                   # Documentation
+│   ├── CraftingSystem.lua
+│   ├── TeleportManager.lua
+│   ├── ParticleEffects.lua
+│   ├── MobAI.lua          # v3.0 ── FSM
+│   ├── AINavigator.lua    # v3.0 ── Pathfinding
+│   ├── BehaviorTree.lua   # v3.0 ── BT engine
+│   ├── AIDirector.lua     # v3.0 ── DDA
+│   └── AIConfig.lua       # v3.0 ── Configs + BT presets
+├── rojo/
+├── docs/
 ├── CHANGELOG.md
 ├── CONTRIBUTING.md
 └── LICENSE
@@ -119,44 +177,21 @@ roblox-procedural-worlds/
 
 ## ⚙️ Configuration
 
-All tuneable values live in `src/WorldConfig.lua`:
-
 ```lua
-WorldConfig.CHUNK_SIZE        = 64     -- studs per chunk
-WorldConfig.RENDER_DISTANCE   = 5      -- chunk radius
-WorldConfig.NOISE_SCALE       = 0.008
-WorldConfig.HEIGHT_MULTIPLIER = 120
-WorldConfig.DAY_LENGTH_SECONDS= 480    -- 8 min real time
-WorldConfig.TELEPORT_COOLDOWN = 10     -- seconds (v2.5)
-WorldConfig.CRAFTING_ENABLED  = true   -- (v2.5)
-WorldConfig.EVENT_BUS_DEBUG   = false  -- verbose logging (v2.5)
+-- WorldConfig.lua (v3.0 AI keys)
+WorldConfig.AI_ENABLED              = true
+WorldConfig.AI_BEHAVIOR_TREE        = true   -- use BT alongside FSM
+WorldConfig.AI_DIRECTOR_ENABLED     = true   -- dynamic difficulty
+WorldConfig.AI_DIRECTOR_DECAY_RATE  = 0.02   -- score drift per second
+WorldConfig.AI_PATHFINDING_COOLDOWN = 0.8    -- recompute interval
+WorldConfig.EVENT_BUS_DEBUG         = false  -- verbose logging
 ```
 
 ---
 
 ## 🗺️ Biomes
 
-Tundra · Taiga · Grassland · Forest · Desert · Savanna · Jungle · **Swamp** · **Volcanic** · Ocean
-
----
-
-## 🧪 EventBus Usage
-
-All modules communicate through `EventBus` — no direct coupling:
-
-```lua
--- Subscribe
-local unsub = EventBus.on("Player:Joined", function(player) ... end)
-
--- Emit
-EventBus.emit("MySystem:Event", data)
-
--- One-time
-EventBus.once("WorldGenerator:Ready", function() ... end)
-
--- Unsubscribe
-unsub()
-```
+Tundra · Taiga · Grassland · Forest · Desert · Savanna · Jungle · Swamp · Volcanic · Ocean
 
 ---
 
