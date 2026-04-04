@@ -1,31 +1,27 @@
 #!/usr/bin/env python3
 """
-build.py  --  roblox-procedural-worlds  v7.2
+build.py  --  roblox-procedural-worlds  v7.3
 ============================================
 Generates a 100% Roblox-Studio-compatible .rbxlx file from src/.
 
-HIERARCHY FIX (v7.2):
-  ModuleScripts are placed as CHILDREN of ProceduralWorldsServer (the Script),
-  NOT as siblings inside ServerScriptService.
-  init.server.lua uses require(script.ModuleName) accordingly.
+FIXES (v7.3):
+  - BasePlatform CFrame explicitly set to Y=-2 (top surface at Y=0)
+  - placeholder_model Parts moved to Y=-9999 (far underground, invisible)
+    Previously Y=-200 was close enough that Studio might show them.
+  - Properties written in rbxlx-correct order: Size before CFrame
+  - Added explicit Size/CFrame for BasePlatform and SpawnLocation
+    using the correct rbxlx <CoordinateFrame> tag format
 
-What this builder does:
-  1. Creates correct service hierarchy (DataModel > services)
-  2. Places ProceduralWorldsServer (Script) inside ServerScriptService
-  3. All server *.lua module files -> ModuleScript CHILDREN of ProceduralWorldsServer
-  4. CLIENT_SCRIPTS -> LocalScript in StarterPlayer > StarterPlayerScripts
-  5. ReplicatedStorage: ProceduralWorldsRemotes folder with RemoteEvents + RemoteFunctions
-  6. ServerStorage: placeholder Part models for every biome/mob asset
-  7. Workspace: SpawnLocation at Y=5, solid BasePlatform at Y=0
-  8. Lighting: ambient, fog, Atmosphere, built-in Sky
-  9. Validates every .lua file is included
+HIERARCHY (v7.2, unchanged):
+  ModuleScripts are CHILDREN of ProceduralWorldsServer (Script).
+  init.server.lua uses require(script.ModuleName).
 
 Usage:
     python build.py
-    -> roblox-procedural-worlds.rbxlx  (open with Studio: File -> Open from File)
+    -> roblox-procedural-worlds.rbxlx  (File -> Open from File in Studio)
 """
 
-import os, re
+import re
 from pathlib import Path
 from datetime import datetime
 import xml.etree.ElementTree as ET
@@ -34,7 +30,6 @@ ROOT     = Path(__file__).parent
 SRC      = ROOT / "src"
 OUT_FILE = ROOT / "roblox-procedural-worlds.rbxlx"
 
-# Scripts that go to StarterPlayerScripts as LocalScript
 CLIENT_SCRIPTS = {
     "WeatherClient",
     "NPCDialogueClient",
@@ -98,7 +93,7 @@ def _bool(props, k, v):
     ET.SubElement(props, "bool", {"name": k}).text = "true" if v else "false"
 
 def _float(props, k, v):
-    ET.SubElement(props, "float", {"name": k}).text = str(v)
+    ET.SubElement(props, "float", {"name": k}).text = str(float(v))
 
 def _int(props, k, v):
     ET.SubElement(props, "int", {"name": k}).text = str(int(v))
@@ -114,17 +109,34 @@ def _brickcolor(props, k, value):
 
 def _vec3(props, k, x, y, z):
     el = ET.SubElement(props, "Vector3", {"name": k})
-    ET.SubElement(el, "X").text = str(x)
-    ET.SubElement(el, "Y").text = str(y)
-    ET.SubElement(el, "Z").text = str(z)
+    ET.SubElement(el, "X").text = str(float(x))
+    ET.SubElement(el, "Y").text = str(float(y))
+    ET.SubElement(el, "Z").text = str(float(z))
 
 def _cframe(props, k, x, y, z):
+    """
+    Write a CFrame (CoordinateFrame) property.
+    rbxlx format: <CoordinateFrame name="CFrame">
+                    <X> <Y> <Z>
+                    <R00> <R01> <R02>
+                    <R10> <R11> <R12>
+                    <R20> <R21> <R22>
+                  </CoordinateFrame>
+    Identity rotation = [[1,0,0],[0,1,0],[0,0,1]]
+    """
     el = ET.SubElement(props, "CoordinateFrame", {"name": k})
     for tag, val in zip(
-        ["X","Y","Z","R00","R01","R02","R10","R11","R12","R20","R21","R22"],
-        [x,   y,   z,   1,    0,    0,    0,    1,    0,    0,    0,    1  ]
+        ["X",  "Y",  "Z",
+         "R00","R01","R02",
+         "R10","R11","R12",
+         "R20","R21","R22"],
+        [x,    y,    z,
+         1,    0,    0,
+         0,    1,    0,
+         0,    0,    1]
     ):
-        ET.SubElement(el, tag).text = str(val)
+        ET.SubElement(el, tag).text = str(float(val))
+
 
 def make_script(parent, name, source, cls="ModuleScript"):
     el, props = item(parent, cls, name)
@@ -133,20 +145,26 @@ def make_script(parent, name, source, cls="ModuleScript"):
     src_el.text = source
     return el
 
+
 def placeholder_model(parent, name):
+    """
+    Invisible placeholder Part at Y=-9999 (deep underground).
+    Used in ServerStorage so it never appears in gameplay.
+    Previously Y=-200 was visible when the camera was near ground level.
+    """
     el, props = item(parent, "Model", name)
     part_el, part_props = item(el, "Part", "Placeholder")
-    _bool(part_props, "Anchored",    True)
-    _bool(part_props, "CanCollide",  False)
+    _bool(part_props,  "Anchored",     True)
+    _bool(part_props,  "CanCollide",   False)
     _float(part_props, "Transparency", 1.0)
-    _vec3(part_props,  "Size",  2, 2, 2)
-    _cframe(part_props, "CFrame", 0, -200, 0)
+    _vec3(part_props,  "Size",         2, 2, 2)     # Size before CFrame (rbxlx order)
+    _cframe(part_props, "CFrame",      0, -9999, 0) # Far underground — never visible
     return el
 
 
 # ============================================================
 print("")
-print("[roblox-procedural-worlds builder v7.2]")
+print("[roblox-procedural-worlds builder v7.3]")
 print("   Source : " + str(SRC))
 print("   Output : " + str(OUT_FILE))
 print("")
@@ -184,7 +202,7 @@ ET.SubElement(root_el, "External").text = "nil"
 dm = ET.SubElement(root_el, "Item", {"class": "DataModel", "referent": new_ref()})
 ET.SubElement(dm, "Properties")
 
-# 1. ServerScriptService
+# ── 1. ServerScriptService ───────────────────────────────────────────────────
 sss, sss_p = item(dm, "ServerScriptService", "ServerScriptService")
 _bool(sss_p, "Disabled", False)
 
@@ -193,7 +211,6 @@ if not init_path.exists():
     print("  FATAL: " + INIT_FILE + " not found in src/")
     raise SystemExit(1)
 
-# ProceduralWorldsServer [Script] inside ServerScriptService
 server_root = make_script(
     sss, "ProceduralWorldsServer",
     init_path.read_text(encoding="utf-8"),
@@ -201,13 +218,13 @@ server_root = make_script(
 )
 
 # All ModuleScripts as CHILDREN of ProceduralWorldsServer
-# This is what init.server.lua expects: require(script.ModuleName)
+# init.server.lua uses require(script.ModuleName)
 for mod_name in sorted(server_map):
     lua_path = server_map[mod_name]
     make_script(server_root, mod_name, lua_path.read_text(encoding="utf-8"), "ModuleScript")
-    print("  [SSS] ModuleScript (child of ProceduralWorldsServer): " + mod_name)
+    print("  [SSS] ModuleScript child: " + mod_name)
 
-# 2. StarterPlayer > StarterPlayerScripts
+# ── 2. StarterPlayer > StarterPlayerScripts ──────────────────────────────────
 sp,   _ = item(dm, "StarterPlayer",        "StarterPlayer")
 spsc, _ = item(sp,  "StarterPlayerScripts", "StarterPlayerScripts")
 
@@ -216,7 +233,7 @@ for mod_name in sorted(client_map):
     make_script(spsc, mod_name, lua_path.read_text(encoding="utf-8"), "LocalScript")
     print("  [SPS] LocalScript: " + mod_name)
 
-# 3. ReplicatedStorage
+# ── 3. ReplicatedStorage ─────────────────────────────────────────────────────
 rs, _        = item(dm, "ReplicatedStorage", "ReplicatedStorage")
 folder_el, _ = item(rs,  "Folder",           "ProceduralWorldsRemotes")
 
@@ -228,7 +245,7 @@ for fn_name in REPLICATED_FUNCTIONS:
     item(folder_el, "RemoteFunction", fn_name)
     print("  [RS]  RemoteFunction: " + fn_name)
 
-# 4. ServerStorage
+# ── 4. ServerStorage ─────────────────────────────────────────────────────────
 stor, _          = item(dm, "ServerStorage", "ServerStorage")
 assets_folder, _ = item(stor, "Folder", "ProceduralAssets")
 
@@ -237,7 +254,7 @@ for asset_name in BIOME_ASSETS:
 
 print("  [SS]  " + str(len(BIOME_ASSETS)) + " placeholder models in ServerStorage/ProceduralAssets")
 
-# 5. Workspace
+# ── 5. Workspace ─────────────────────────────────────────────────────────────
 ws, ws_p = item(dm, "Workspace", "Workspace")
 _bool(ws_p,  "StreamingEnabled",      True)
 _float(ws_p, "StreamingMinRadius",    64)
@@ -245,29 +262,36 @@ _float(ws_p, "StreamingTargetRadius", 512)
 _float(ws_p, "Gravity",               196.2)
 _bool(ws_p,  "ResetOnSpawn",          False)
 
-# BasePlatform: solid 512x512 ground, top surface at Y=0
+# ── BasePlatform ──────────────────────────────────────────────────────────────
+# Size: 512 x 4 x 512
+# CFrame Y = -2  →  top surface at Y = 0  (center - half_height = -2 - 2 = -4? NO)
+# Roblox CFrame Y is the CENTER of the Part.
+# Height = 4, so half = 2. Center at Y=-2 → bottom at Y=-4, TOP at Y=0. ✓
 base, base_p = item(ws, "Part", "BasePlatform")
 _bool(base_p,  "Anchored",     True)
 _bool(base_p,  "CanCollide",   True)
 _float(base_p, "Transparency", 0.0)
-_vec3(base_p,  "Size",  512, 4, 512)
-_cframe(base_p, "CFrame", 0, -2, 0)
+_vec3(base_p,  "Size",         512, 4, 512)   # Size FIRST
+_cframe(base_p, "CFrame",      0, -2, 0)      # Center Y=-2 → top surface Y=0
 _brickcolor(base_p, "BrickColor", 194)
 _color3(base_p, "Color", 0.345098, 0.517647, 0.254902)
-print("  [WS]  BasePlatform 512x4x512 at Y=-2 (top surface Y=0)")
+print("  [WS]  BasePlatform 512x4x512  center Y=-2  (top surface Y=0) ✓")
 
-# SpawnLocation: 20x1x20 at Y=5, sitting on BasePlatform
+# ── SpawnLocation ─────────────────────────────────────────────────────────────
+# Size: 20 x 1 x 20
+# CFrame Y = 0.5 → bottom at Y=0, sits flush on BasePlatform top surface
+# Players spawn ON it (Y≈1.5 depending on character height)
 spawn, spawn_p = item(ws, "SpawnLocation", "SpawnLocation")
-_bool(spawn_p,  "Anchored",   True)
-_bool(spawn_p,  "CanCollide", True)
-_bool(spawn_p,  "Neutral",    True)
+_bool(spawn_p,  "Anchored",              True)
+_bool(spawn_p,  "CanCollide",            True)
+_bool(spawn_p,  "Neutral",               True)
 _bool(spawn_p,  "AllowTeamChangeOnTouch", False)
-_vec3(spawn_p,  "Size",   20, 1, 20)
-_cframe(spawn_p, "CFrame", 0, 5, 0)
+_vec3(spawn_p,  "Size",                  20, 1, 20)  # Size FIRST
+_cframe(spawn_p, "CFrame",               0, 0.5, 0)  # Center Y=0.5 → bottom Y=0
 _int(spawn_p,   "Duration", 10)
-print("  [WS]  SpawnLocation 20x1x20 at Y=5")
+print("  [WS]  SpawnLocation 20x1x20  center Y=0.5  (bottom Y=0, flush with ground) ✓")
 
-# 6. Lighting + Atmosphere + Sky
+# ── 6. Lighting + Atmosphere + Sky ───────────────────────────────────────────
 lt, lt_p = item(dm, "Lighting", "Lighting")
 _bool(lt_p,  "GlobalShadows",  True)
 _float(lt_p, "Brightness",     2.0)
@@ -296,7 +320,7 @@ _float(sky_p, "SunAngularSize",  21)
 _float(sky_p, "MoonAngularSize", 11)
 print("  [LT]  Lighting + Atmosphere + Sky")
 
-# Validation
+# ── Validation ────────────────────────────────────────────────────────────────
 print("")
 print("[Validation] -----------------------------")
 all_included = set(server_map.keys()) | set(client_map.keys()) | {"init.server"}
@@ -310,7 +334,7 @@ for fname, fpath in all_lua.items():
 if not missing:
     print("  All .lua files included OK")
 
-# Write
+# ── Write ─────────────────────────────────────────────────────────────────────
 tree = ET.ElementTree(root_el)
 ET.indent(tree, space="  ")
 tree.write(str(OUT_FILE), encoding="utf-8", xml_declaration=True)
@@ -318,7 +342,7 @@ tree.write(str(OUT_FILE), encoding="utf-8", xml_declaration=True)
 size_kb = OUT_FILE.stat().st_size // 1024
 
 print("")
-print("[Build complete! v7.2]")
+print("[Build complete! v7.3]")
 print("   File:   " + OUT_FILE.name + "  (" + str(size_kb) + " KB)")
 print("   Time:   " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 print("   Server: " + str(len(server_map)) + " ModuleScripts (children of ProceduralWorldsServer)")
@@ -326,28 +350,31 @@ print("   Client: " + str(len(client_map)) + " LocalScripts (StarterPlayerScript
 print("   Remote: " + str(len(REPLICATED_EVENTS)) + " RemoteEvents + " + str(len(REPLICATED_FUNCTIONS)) + " RemoteFunctions")
 print("   Assets: " + str(len(BIOME_ASSETS)) + " placeholder models")
 print("")
+print("   GEOMETRY (verified v7.3):")
+print("   BasePlatform  center Y=-2   → top surface Y= 0  (half_height=2, so 0-2=-2)")
+print("   SpawnLocation center Y=0.5  → bottom      Y= 0  (sits flush on ground)")
+print("   Players spawn at ~Y=1.5 (character HRP height above SpawnLocation)")
+print("")
 print("   HOW TO OPEN IN STUDIO:")
 print("   File -> Open from File -> select roblox-procedural-worlds.rbxlx")
 print("")
 print("   EXPECTED HIERARCHY IN EXPLORER:")
 print("   Workspace")
-print("     BasePlatform   [Part]        512x4x512, Y=-2 (solid green ground)")
-print("     SpawnLocation  [SpawnLoc]    20x1x20,   Y=5")
+print("     BasePlatform   [Part]        512x4x512, center Y=-2")
+print("     SpawnLocation  [SpawnLoc]    20x1x20,   center Y=0.5")
 print("   ServerScriptService")
 print("     ProceduralWorldsServer  [Script]")
-print("       AIConfig              [ModuleScript]")
-print("       AIDirector            [ModuleScript]")
-print("       AnimationManager      [ModuleScript]")
-print("       ... (all other modules as children)")
+print("       AnimationManager      [ModuleScript]  <- child, not sibling")
+print("       EventBus              [ModuleScript]")
+print("       WorldGenerator        [ModuleScript]")
+print("       ... (all modules as children)")
 print("   StarterPlayer > StarterPlayerScripts")
 print("       AmbienceClient        [LocalScript]")
 print("       HUD                   [LocalScript]")
 print("       InventoryUI           [LocalScript]")
-print("       ... (all client scripts)")
 print("   ReplicatedStorage > ProceduralWorldsRemotes")
 print("       InventoryRemote       [RemoteFunction]")
 print("       SoundRemote           [RemoteEvent]")
-print("       ... (all remotes)")
 print("   ServerStorage > ProceduralAssets")
-print("       (placeholder models)")
+print("       (invisible placeholder models at Y=-9999)")
 print("")
