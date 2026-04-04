@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roblox Procedural Worlds — Architecture Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0e0f11;
+  --surface: #161719;
+  --surface2: #1c1e21;
+  --border: rgba(255,255,255,0.07);
+  --text: #e8eaed;
+  --muted: #8b8d91;
+  --faint: #4a4c50;
+
+  --c-worldgen:  #3ecf8e;
+  --c-ai:        #f5a623;
+  --c-combat:    #e84040;
+  --c-player:    #4fa3e8;
+  --c-social:    #c084fc;
+  --c-monetize:  #fbbf24;
+  --c-ui:        #34d0ba;
+  --c-infra:     #94a3b8;
+
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-body: 'Inter', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { -webkit-font-smoothing: antialiased; background: var(--bg); }
+body {
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  padding: 48px 32px 64px;
+}
+
+.header { text-align: center; margin-bottom: 48px; }
+.logo { display: inline-flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+.logo svg { width: 40px; height: 40px; }
+.logo-text { font-size: 22px; font-weight: 700; letter-spacing: -0.5px; color: var(--text); }
+.logo-text span { color: var(--c-worldgen); }
+.subtitle { font-size: 13px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; font-family: var(--font-mono); }
+
+.stats { display: flex; justify-content: center; gap: 32px; margin-bottom: 48px; flex-wrap: wrap; }
+.stat { display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.stat-num { font-size: 28px; font-weight: 700; font-family: var(--font-mono); }
+.stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.stat-divider { width: 1px; background: var(--border); height: 40px; align-self: center; }
+
+.arch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 16px; max-width: 1400px; margin: 0 auto; }
+
+.group-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; transition: border-color 0.2s, transform 0.2s; }
+.group-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+
+.group-header { display: flex; align-items: center; gap: 10px; padding: 14px 18px; border-bottom: 1px solid var(--border); background: var(--surface2); }
+.group-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--accent); flex-shrink: 0; box-shadow: 0 0 8px var(--accent); }
+.group-name { font-size: 13px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--accent); flex: 1; font-family: var(--font-mono); }
+.group-count { font-size: 11px; font-family: var(--font-mono); color: var(--muted); background: rgba(255,255,255,0.05); padding: 2px 8px; border-radius: 20px; }
+
+.module-list { padding: 8px 0; }
+.module-row { display: flex; align-items: flex-start; gap: 10px; padding: 6px 18px; transition: background 0.15s; cursor: default; }
+.module-row:hover { background: rgba(255,255,255,0.03); }
+.module-icon { width: 6px; height: 6px; border-radius: 2px; background: var(--accent); opacity: 0.5; flex-shrink: 0; margin-top: 6px; }
+.module-name { font-size: 12.5px; font-family: var(--font-mono); font-weight: 600; color: var(--text); min-width: 160px; flex-shrink: 0; }
+.module-desc { font-size: 11.5px; color: var(--muted); line-height: 1.45; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; max-width: 900px; margin: 0 auto 36px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-family: var(--font-mono); }
+.legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+.dep-section { max-width: 1400px; margin: 40px auto 0; background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.dep-header { padding: 14px 20px; background: var(--surface2); border-bottom: 1px solid var(--border); font-size: 12px; font-family: var(--font-mono); font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.dep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); padding: 16px; gap: 12px; }
+.dep-item { display: flex; align-items: flex-start; gap: 10px; font-size: 11.5px; font-family: var(--font-mono); color: var(--muted); padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--border); flex-wrap: wrap; }
+.dep-source { color: var(--text); font-weight: 600; }
+.dep-arrow { color: var(--faint); }
+.dep-target { color: var(--c-infra); }
+
+.footer { text-align: center; margin-top: 48px; font-size: 11px; color: var(--faint); font-family: var(--font-mono); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="logo">
+    <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-label="Procedural Worlds logo">
+      <rect x="4" y="4" width="14" height="14" rx="2" fill="#3ecf8e" opacity="0.9"/>
+      <rect x="22" y="4" width="14" height="14" rx="2" fill="#3ecf8e" opacity="0.5"/>
+      <rect x="4" y="22" width="14" height="14" rx="2" fill="#3ecf8e" opacity="0.5"/>
+      <rect x="22" y="22" width="14" height="14" rx="2" fill="#3ecf8e" opacity="0.25"/>
+      <path d="M18 11 L22 11 M11 18 L11 22 M29 18 L29 22 M18 29 L22 29" stroke="#3ecf8e" stroke-width="1.5" stroke-linecap="round"/>
+    </svg>
+    <div class="logo-text">Roblox <span>Procedural</span> Worlds</div>
+  </div>
+  <div class="subtitle">Architecture Map · src/ · 64 Modules · 8 Layers</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-num" style="color:var(--c-worldgen)">64</div><div class="stat-label">Module Total</div></div>
+  <div class="stat-divider"></div>
+  <div class="stat"><div class="stat-num" style="color:var(--c-ai)">8</div><div class="stat-label">Arhitecturi</div></div>
+  <div class="stat-divider"></div>
+  <div class="stat"><div class="stat-num" style="color:var(--c-ui)">7</div><div class="stat-label">Client Scripts</div></div>
+  <div class="stat-divider"></div>
+  <div class="stat"><div class="stat-num" style="color:var(--c-combat)">10</div><div class="stat-label">AI Modules</div></div>
+  <div class="stat-divider"></div>
+  <div class="stat"><div class="stat-num" style="color:var(--c-infra)">14</div><div class="stat-label">Infra Modules</div></div>
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-worldgen)"></div>World Gen</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-ai)"></div>AI / Mobs</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-combat)"></div>Combat</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-player)"></div>Player</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-social)"></div>Social</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-monetize)"></div>Monetize</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-ui)"></div>UI / Client</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--c-infra)"></div>Infra</div>
+</div>
+
+<div class="arch-grid">
+
+  <div class="group-card" style="--accent:var(--c-worldgen)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">World Gen</div><div class="group-count">10 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">ChunkHandler</div><div class="module-desc">Incarca / descarca chunk-uri pe baza pozitiei playerului</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">ChunkPredictor</div><div class="module-desc">Predictie chunk-uri viitoare prin miscare</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">BiomeResolver</div><div class="module-desc">Determina biomul (Forest, Desert, Tundra) la orice coordonata</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">RiverCarver</div><div class="module-desc">Taie rauri in heightmap dupa noise Bezier</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">OreGenerator</div><div class="module-desc">Plaseaza depozite de minereu dupa adancime + biom</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AssetPlacer</div><div class="module-desc">Distribuie arbori, stanci, props cu poisson disk</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">StructurePlacer</div><div class="module-desc">Insereaza structuri prefabricate (ruine, tabere)</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">VillageGenerator</div><div class="module-desc">Genereaza sate cu case, NPC-uri, drumuri</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">DungeonGenerator</div><div class="module-desc">BSP dungeon cu coridoare, camere si boss room</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">ProceduralQuestGen</div><div class="module-desc">Genereaza quest-uri din template + context biom</div></div>
+    </div>
+  </div>
+
+  <div class="group-card" style="--accent:var(--c-ai)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">AI / Mobs</div><div class="group-count">10 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">MobAI</div><div class="module-desc">State machine: Idle → Patrol → Chase → Attack → Flee</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">MobSpawner</div><div class="module-desc">Spawn mobs pe biom, densitate si timp zi/noapte</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AIDirector</div><div class="module-desc">Ajusteaza dificultatea globala in timp real</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AIConfig</div><div class="module-desc">Parametri tuning: raze, daune, timpi cooldown</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AIGroupBehavior</div><div class="module-desc">Coordonare grup: flank, surround, retreat</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AIMemory</div><div class="module-desc">Memoreaza ultima pozitie inamica + threat score</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AINavigator</div><div class="module-desc">Wrapper PathfindingService cu retry + smoothing</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">BehaviorTree</div><div class="module-desc">Motor executie noduri BT (Sequence, Selector, Leaf)</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AwakenSystem</div><div class="module-desc">Trezeste mobs dormanti la proximitate player</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">BossEncounter</div><div class="module-desc">Faze boss, mecanici unice si tabel de loot</div></div>
+    </div>
+  </div>
+
+  <div class="group-card" style="--accent:var(--c-combat)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">Combat</div><div class="group-count">5 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">CombatSystem</div><div class="module-desc">Hitbox RayCast, calcul damage, knockback, iframes</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">FightingStyles</div><div class="module-desc">Modificatori per stil: Berserker, Assassin, Mage</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">SkillSystem</div><div class="module-desc">Unlock skill, cooldown tracker, XP drain</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">RunModifiers</div><div class="module-desc">Stack buff/debuff activ per run (rogue-like)</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AnimationManager</div><div class="module-desc">Animatii procedurale TweenService (fara AnimationId)</div></div>
+    </div>
+  </div>
+
+  <div class="group-card" style="--accent:var(--c-player)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">Player</div><div class="group-count">9 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">Inventory</div><div class="module-desc">Slot management server-side, stacking, max weight</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">InventoryRemote</div><div class="module-desc">RemoteFunction bridge: getSlots / drop / use / equip</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">InventoryUI.client</div><div class="module-desc">Drag-and-drop UI, tooltip, filtre inventar</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">PlayerPersistence</div><div class="module-desc">Wrapper salvare / restaurare date player</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">DataStoreManager</div><div class="module-desc">DataStore cu retry exponential + cache LRU</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">EconomyManager</div><div class="module-desc">Tranzactii valuta, shop, audit log</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">CraftingSystem</div><div class="module-desc">Validare reteta, consum materiale, output item</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">LootTable</div><div class="module-desc">Tragere ponderata loot cu seed reproductibil</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">DailyRewards</div><div class="module-desc">Streak login zilnic + escaladare recompense</div></div>
+    </div>
+  </div>
+
+  <div class="group-card" style="--accent:var(--c-social)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">Social</div><div class="group-count">6 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">ClanSystem</div><div class="module-desc">Creare clan, membership, banca clan</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">FactionSystem</div><div class="module-desc">Reputatie per factiune, perks la threshold</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">LeaderboardManager</div><div class="module-desc">OrderedDataStore top-100, refresh periodic</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">QuestSystem</div><div class="module-desc">Stare quest, obiective, progres si completare</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">NPCDialogue</div><div class="module-desc">Arbori conversatie NPC cu ramificari conditionale</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">NPCDialogueClient</div><div class="module-desc">Trigger apropiere NPC → deschide dialog</div></div>
+    </div>
+  </div>
+
+  <div class="group-card" style="--accent:var(--c-monetize)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">Monetize</div><div class="group-count">3 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">GamepassManager</div><div class="module-desc">Verificare ownership gamepass, cache per sesiune</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">DeveloperProductHandler</div><div class="module-desc">Handler cumparare DevProduct + grant reward</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">PremiumPerks</div><div class="module-desc">Bonusuri Roblox Premium (XP, drop rate, slots)</div></div>
+    </div>
+  </div>
+
+  <div class="group-card" style="--accent:var(--c-ui)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">UI / Client</div><div class="group-count">7 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">HUD.client</div><div class="module-desc">Health, mana, XP bar, buff icons, cooldown HUD</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">MinimapUI.client</div><div class="module-desc">Radar minimap cu marker-e biom si player</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">QuestTracker.client</div><div class="module-desc">Panel quest activ cu progres live</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">DialogueUI.client</div><div class="module-desc">Renderer box dialog cu typewriter effect</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AmbienceClient.client</div><div class="module-desc">Crossfade 2s ambientale per biom</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">WeatherClient</div><div class="module-desc">VFX ploaie, ceata, viscol pe client</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">NotificationBridge</div><div class="module-desc">Toast notifications + event overlay</div></div>
+    </div>
+  </div>
+
+  <div class="group-card" style="--accent:var(--c-infra)">
+    <div class="group-header"><div class="group-dot"></div><div class="group-name">Infra</div><div class="group-count">14 module</div></div>
+    <div class="module-list">
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">EventBus</div><div class="module-desc">Pub-sub global: Subscribe / Publish / Unsubscribe</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">ObjectPool</div><div class="module-desc">Pool Part/Model cu Acquire / Release / Flush</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">LODManager</div><div class="module-desc">LOD switch distanta: Full → Medium → Billboard</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">StreamingManager</div><div class="module-desc">Helper StreamingEnabled: zone priority control</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">ParticleEffects</div><div class="module-desc">Librarie burst particule: hit, death, magic, heal</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">SoundManager</div><div class="module-desc">Sound 3D la pozitie, fallback player, pitch random</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">WeatherManager</div><div class="module-desc">Stare vreme server: sync → client via Remote</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">TeleportManager</div><div class="module-desc">TeleportService cu queue, retry si loading screen</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AdminPanel</div><div class="module-desc">Comenzi admin: kick, ban, teleport, give item</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">AntiExploit</div><div class="module-desc">Sanity checks server: speed, position, damage</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">SeedPersistence</div><div class="module-desc">Salvare / restaurare seed lume per server</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">SeedShare</div><div class="module-desc">Clipboard export seed + import cu validare</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">BaseBuilding</div><div class="module-desc">Plasare baza jucator: grid snap, coliziune, save</div></div>
+      <div class="module-row"><div class="module-icon"></div><div class="module-name">DayNightCycle</div><div class="module-desc">Lighting day-night loop cu ore virtuale</div></div>
+    </div>
+  </div>
+
+</div>
+
+<div class="dep-section">
+  <div class="dep-header">Dependente cheie</div>
+  <div class="dep-grid">
+    <div class="dep-item"><span class="dep-source">MobAI</span><span class="dep-arrow"> → </span><span class="dep-target">BehaviorTree, AINavigator, AIMemory, AnimationManager</span></div>
+    <div class="dep-item"><span class="dep-source">ChunkHandler</span><span class="dep-arrow"> → </span><span class="dep-target">BiomeResolver, OreGenerator, AssetPlacer, StructurePlacer</span></div>
+    <div class="dep-item"><span class="dep-source">CombatSystem</span><span class="dep-arrow"> → </span><span class="dep-target">FightingStyles, SkillSystem, ParticleEffects, SoundManager</span></div>
+    <div class="dep-item"><span class="dep-source">InventoryRemote</span><span class="dep-arrow"> → </span><span class="dep-target">Inventory (lazy require)</span></div>
+    <div class="dep-item"><span class="dep-source">MobSpawner</span><span class="dep-arrow"> → </span><span class="dep-target">MobAI, ObjectPool, BiomeResolver</span></div>
+    <div class="dep-item"><span class="dep-source">QuestSystem</span><span class="dep-arrow"> → </span><span class="dep-target">EventBus, DataStoreManager, NotificationBridge</span></div>
+    <div class="dep-item"><span class="dep-source">AIDirector</span><span class="dep-arrow"> → </span><span class="dep-target">AIConfig, MobSpawner, BossEncounter</span></div>
+    <div class="dep-item"><span class="dep-source">PlayerPersistence</span><span class="dep-arrow"> → </span><span class="dep-target">DataStoreManager, Inventory, SkillSystem</span></div>
+    <div class="dep-item"><span class="dep-source">HUD.client</span><span class="dep-arrow"> → </span><span class="dep-target">NotificationBridge, EventBus</span></div>
+    <div class="dep-item"><span class="dep-source">WeatherClient</span><span class="dep-arrow"> → </span><span class="dep-target">WeatherManager (RemoteEvent)</span></div>
+    <div class="dep-item"><span class="dep-source">AmbienceClient</span><span class="dep-arrow"> → </span><span class="dep-target">BiomeResolver attr, TweenService</span></div>
+    <div class="dep-item"><span class="dep-source">EconomyManager</span><span class="dep-arrow"> → </span><span class="dep-target">DataStoreManager, GamepassManager</span></div>
+  </div>
+</div>
+
+<div class="footer">
+  roblox-procedural-worlds · github.com/Gzeu · April 2026 · 64 modules · Lua 5.1
+</div>
+
+</body>
+</html>
