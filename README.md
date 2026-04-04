@@ -5,7 +5,29 @@
 [![Roblox](https://img.shields.io/badge/Roblox-Studio-red?logo=roblox)](https://www.roblox.com)
 [![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-A fully-featured procedural open-world engine for Roblox Studio — 50+ Lua modules, a Python `.rbxlx` builder, and a visual web configurator.
+A fully-featured procedural open-world engine for Roblox Studio — 50+ Lua modules, a Python `.rbxlx` builder (v2.0), and a visual web configurator (v2.0) with presets and live terrain preview.
+
+---
+
+## What's New in v2.0
+
+### `build_world.py` v2.0
+| Feature | Details |
+|---------|---------|
+| 🌵 Desert cacti | Trunk + ball top + optional side arms |
+| 🌿 Swamp trees | Gnarled trunk, branch, moss canopy + hanging moss strip |
+| 🏔️ Snow cap | Auto white cap above 70% of `maxHeight` |
+| 🏖️ Beach strip | Sand colour at `waterLevel ± 3` |
+| 🌋 Volcanic rocks | Basalt boulders + Neon lava pool prop |
+| ❄️ Tundra boulders | Grey boulder + snow cap layer |
+| 🌊 Ocean rocks | Underwater rock formations |
+| 📊 Stats table | Biome chunk breakdown printed on every build |
+
+### `world-configurator.html` v2.0
+- **Preset bar** — one-click worlds: 🏝️ Survival Island, 🌋 Volcanic Wasteland, ❄️ Arctic Tundra
+- **Space key** = instant random seed (global keyboard shortcut)
+- **Export section** — ready-to-run Python command, Copy button
+- Unified toast notifications via `showNotif()`
 
 ---
 
@@ -87,8 +109,8 @@ roblox-procedural-worlds/
 │       └── NPCDialogue.lua     ← NPC branching dialogue
 │
 ├── tools/
-│   ├── build_world.py          ← Generate .rbxlx from JSON config
-│   ├── world-configurator.html ← Visual configurator + live preview
+│   ├── build_world.py          ← Generate .rbxlx from JSON config (v2.0)
+│   ├── world-configurator.html ← Visual configurator + live preview (v2.0)
 │   └── README_BUILDER.md       ← Builder documentation
 │
 ├── configs/
@@ -102,23 +124,26 @@ roblox-procedural-worlds/
 
 ## Quick Start
 
-### Option A — Python Builder
+### Option A — Python Builder (v2.0)
 
 ```bash
 # 1. Clone
 git clone https://github.com/Gzeu/roblox-procedural-worlds
 cd roblox-procedural-worlds
 
-# 2. Configure (visual UI)
+# 2. Open the visual configurator in browser
 open tools/world-configurator.html   # macOS
 start tools/world-configurator.html  # Windows
 
-# 3. Download config → world_config.json, then build
+# 3. Pick a preset (or configure manually), download config → world_config.json
+# 4. Build .rbxlx
 python tools/build_world.py configs/default_world.json MyWorld.rbxlx
 
-# 4. Open in Roblox Studio
+# 5. Open in Roblox Studio
 # File → Open from File → MyWorld.rbxlx
 ```
+
+> **Tip:** Press `Space` in the configurator for an instant random seed. The **Export** section shows the exact command to copy-paste.
 
 ### Option B — Rojo (recommended for dev)
 
@@ -127,6 +152,16 @@ npm install -g rojo
 rojo serve default.project.json
 # Then in Roblox Studio install Rojo plugin and connect
 ```
+
+---
+
+## Built-in Presets
+
+| Preset | Seed | Biomes | Difficulty |
+|--------|------|--------|------------|
+| 🏝️ Survival Island | 777000 | Forest, Desert, Swamp | Normal |
+| 🌋 Volcanic Wasteland | 666999 | Volcanic, Desert | Hard |
+| ❄️ Arctic Tundra | 112233 | Tundra, Ocean | Hard |
 
 ---
 
@@ -154,12 +189,39 @@ rojo serve default.project.json
   "maxHeight": 120,
   "waterLevel": 20,
   "noiseScale": 0.05,
-  "biomes": ["Forest", "Desert", "Tundra"],
-  "mobs": { "density": 5, "difficulty": "normal", "bosses": true, "groupAI": true },
-  "structures": { "villages": true, "dungeons": true, "rivers": true, "ores": true },
-  "systems": { "dayNightCycle": true, "weather": true, "baseBuilding": false, "clans": false, "dayLengthMinutes": 20 }
+  "biomes": ["Forest", "Desert", "Tundra", "Swamp", "Volcanic", "Ocean"],
+  "mobs": {
+    "density": 5,
+    "difficulty": "normal",
+    "bosses": true,
+    "groupAI": true
+  },
+  "structures": {
+    "villages": true,
+    "dungeons": true,
+    "rivers": true,
+    "ores": true
+  },
+  "systems": {
+    "dayNightCycle": true,
+    "weather": true,
+    "baseBuilding": false,
+    "clans": false,
+    "dayLengthMinutes": 20
+  }
 }
 ```
+
+### Biome-specific props (v2.0)
+
+| Biome | Props generated |
+|-------|----------------|
+| Forest | Trees (trunk + ball canopy), snow cap above 70% height |
+| Desert | Cacti (trunk + ball + optional arms), beach sand strip |
+| Swamp | Gnarled trees + hanging moss |
+| Volcanic | Basalt boulders + Neon lava pools |
+| Tundra | Grey boulders + snow cap |
+| Ocean | Underwater rock formations |
 
 ---
 
