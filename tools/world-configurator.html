@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roblox World Configurator</title>
+<link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg: #0e0f11;
+  --surface: #161719;
+  --surface2: #1e2023;
+  --border: rgba(255,255,255,0.08);
+  --text: #e8eaed;
+  --muted: #8b8d91;
+  --faint: #3a3c40;
+  --accent: #3ecf8e;
+  --accent2: #f5a623;
+  --danger: #e84040;
+  --font: 'Satoshi', sans-serif;
+  --radius: 10px;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+html{-webkit-font-smoothing:antialiased;}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:grid;grid-template-columns:300px 1fr;grid-template-rows:56px 1fr;}
+
+.topbar{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;}
+.logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;}
+.logo svg{width:28px;height:28px;}
+.logo span{color:var(--accent);}
+.topbar-actions{margin-left:auto;display:flex;gap:8px;}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:7px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all 0.15s;}
+.btn-primary{background:var(--accent);color:#0a1a14;}
+.btn-primary:hover{background:#2db87a;}
+.btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
+.btn-secondary:hover{background:var(--faint);}
+
+.sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:16px;}
+.section-title{font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
+.section-title:first-child{margin-top:0;}
+.field{margin-bottom:12px;}
+.field label{display:block;font-size:12px;font-weight:600;color:var(--muted);margin-bottom:5px;}
+.field input[type=number],.field input[type=text],.field select{width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);padding:7px 10px;border-radius:7px;font-size:13px;font-family:var(--font);transition:border-color 0.15s;}
+.field input:focus,.field select:focus{outline:none;border-color:var(--accent);}
+.field input[type=range]{width:100%;accent-color:var(--accent);margin-top:4px;}
+.range-val{font-size:12px;color:var(--accent);font-weight:700;float:right;}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;padding:8px 0;}
+.toggle-label{font-size:13px;color:var(--text);}
+.toggle{position:relative;width:36px;height:20px;flex-shrink:0;}
+.toggle input{opacity:0;width:0;height:0;}
+.toggle-slider{position:absolute;inset:0;background:var(--faint);border-radius:20px;cursor:pointer;transition:0.2s;}
+.toggle-slider:before{content:"";position:absolute;width:14px;height:14px;left:3px;top:3px;background:white;border-radius:50%;transition:0.2s;}
+.toggle input:checked+.toggle-slider{background:var(--accent);}
+.toggle input:checked+.toggle-slider:before{transform:translateX(16px);}
+.biome-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
+.biome-chip{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid transparent;transition:all 0.15s;user-select:none;}
+.biome-chip.active{border-color:currentColor;}
+.chip-forest{color:#3ecf8e;background:rgba(62,207,142,0.1);}
+.chip-forest.active{background:rgba(62,207,142,0.2);}
+.chip-desert{color:#f5a623;background:rgba(245,166,35,0.1);}
+.chip-desert.active{background:rgba(245,166,35,0.2);}
+.chip-tundra{color:#7dd3fc;background:rgba(125,211,252,0.1);}
+.chip-tundra.active{background:rgba(125,211,252,0.2);}
+.chip-swamp{color:#a3e635;background:rgba(163,230,53,0.1);}
+.chip-swamp.active{background:rgba(163,230,53,0.2);}
+.chip-volcanic{color:#fb923c;background:rgba(251,146,60,0.1);}
+.chip-volcanic.active{background:rgba(251,146,60,0.2);}
+.chip-ocean{color:#38bdf8;background:rgba(56,189,248,0.1);}
+.chip-ocean.active{background:rgba(56,189,248,0.2);}
+
+.main{overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px;}
+.preview-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.preview-header{padding:14px 18px;border-bottom:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:space-between;}
+.preview-title{font-size:13px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+.seed-badge{font-size:12px;font-family:monospace;color:var(--accent);background:rgba(62,207,142,0.1);padding:3px 10px;border-radius:20px;border:1px solid rgba(62,207,142,0.2);}
+.canvas-wrap{position:relative;background:#0a0c0e;}
+canvas{display:block;width:100%;height:300px;}
+.canvas-overlay{position:absolute;bottom:12px;left:12px;display:flex;gap:8px;flex-wrap:wrap;}
+.badge{font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px;backdrop-filter:blur(4px);}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:1px;background:var(--border);}
+.stat-cell{background:var(--surface);padding:14px 18px;}
+.stat-cell .val{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text);}
+.stat-cell .lbl{font-size:11px;color:var(--muted);margin-top:2px;}
+.json-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
+.json-header{padding:12px 18px;border-bottom:1px solid var(--border);background:var(--surface2);display:flex;align-items:center;justify-content:space-between;}
+.json-title{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.06em;}
+pre{padding:16px 18px;font-size:12px;font-family:'JetBrains Mono',monospace;color:#a5f3c0;line-height:1.7;overflow-x:auto;max-height:320px;overflow-y:auto;}
+.steps-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:20px;}
+.steps-title{font-size:13px;font-weight:700;margin-bottom:16px;color:var(--text);}
+.step{display:flex;gap:12px;margin-bottom:14px;align-items:flex-start;}
+.step-num{width:24px;height:24px;border-radius:50%;background:rgba(62,207,142,0.15);color:var(--accent);font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.step-text{font-size:13px;color:var(--muted);line-height:1.6;}
+.step-text code{background:var(--surface2);color:var(--accent);padding:1px 6px;border-radius:4px;font-size:12px;font-family:monospace;}
+.notification{position:fixed;bottom:24px;right:24px;background:var(--accent);color:#0a1a14;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:700;transform:translateY(80px);opacity:0;transition:all 0.3s;z-index:100;}
+.notification.show{transform:translateY(0);opacity:1;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="logo">
+    <svg viewBox="0 0 28 28" fill="none"><rect x="2" y="2" width="11" height="11" rx="2" fill="#3ecf8e" opacity="0.9"/><rect x="15" y="2" width="11" height="11" rx="2" fill="#3ecf8e" opacity="0.5"/><rect x="2" y="15" width="11" height="11" rx="2" fill="#3ecf8e" opacity="0.5"/><rect x="15" y="15" width="11" height="11" rx="2" fill="#3ecf8e" opacity="0.25"/></svg>
+    <span>Roblox <span>World</span> Configurator</span>
+  </div>
+  <div class="topbar-actions">
+    <button class="btn btn-secondary" onclick="randomSeed()">🎲 Random Seed</button>
+    <button class="btn btn-secondary" onclick="copyJSON()">📋 Copy JSON</button>
+    <button class="btn btn-primary" onclick="downloadJSON()">⬇ Download Config</button>
+  </div>
+</div>
+
+<div class="sidebar">
+  <div class="section-title">🌍 World Identity</div>
+  <div class="field">
+    <label>World Name</label>
+    <input type="text" id="worldName" value="My Procedural World" oninput="update()">
+  </div>
+  <div class="field">
+    <label>Seed <span class="range-val" id="seedVal">12345</span></label>
+    <input type="number" id="seed" value="12345" min="1" max="9999999" oninput="syncSeed()">
+  </div>
+  <div class="section-title">📐 Terrain</div>
+  <div class="field">
+    <label>Chunk Size (studs) <span class="range-val" id="chunkVal">64</span></label>
+    <input type="range" id="chunkSize" min="32" max="256" step="32" value="64" oninput="syncRange('chunkSize','chunkVal');update()">
+  </div>
+  <div class="field">
+    <label>Render Distance <span class="range-val" id="renderVal">3</span></label>
+    <input type="range" id="renderDist" min="1" max="8" value="3" oninput="syncRange('renderDist','renderVal');update()">
+  </div>
+  <div class="field">
+    <label>Max Height <span class="range-val" id="heightVal">120</span></label>
+    <input type="range" id="maxHeight" min="40" max="400" step="10" value="120" oninput="syncRange('maxHeight','heightVal');update()">
+  </div>
+  <div class="field">
+    <label>Water Level <span class="range-val" id="waterVal">20</span></label>
+    <input type="range" id="waterLevel" min="0" max="100" step="5" value="20" oninput="syncRange('waterLevel','waterVal');update()">
+  </div>
+  <div class="field">
+    <label>Noise Scale <span class="range-val" id="noiseVal">0.05</span></label>
+    <input type="range" id="noiseScale" min="1" max="20" value="5" oninput="syncNoise();update()">
+  </div>
+  <div class="section-title">🌿 Biomes</div>
+  <div class="biome-chips" id="biomeChips">
+    <div class="biome-chip chip-forest active" data-biome="Forest" onclick="toggleBiome(this)">Forest</div>
+    <div class="biome-chip chip-desert active" data-biome="Desert" onclick="toggleBiome(this)">Desert</div>
+    <div class="biome-chip chip-tundra active" data-biome="Tundra" onclick="toggleBiome(this)">Tundra</div>
+    <div class="biome-chip chip-swamp" data-biome="Swamp" onclick="toggleBiome(this)">Swamp</div>
+    <div class="biome-chip chip-volcanic" data-biome="Volcanic" onclick="toggleBiome(this)">Volcanic</div>
+    <div class="biome-chip chip-ocean" data-biome="Ocean" onclick="toggleBiome(this)">Ocean</div>
+  </div>
+  <div class="section-title">👾 Mobs</div>
+  <div class="field">
+    <label>Mob Density <span class="range-val" id="densityVal">5</span></label>
+    <input type="range" id="mobDensity" min="0" max="20" value="5" oninput="syncRange('mobDensity','densityVal');update()">
+  </div>
+  <div class="field">
+    <label>AI Difficulty</label>
+    <select id="difficulty" onchange="update()">
+      <option value="easy">Easy</option>
+      <option value="normal" selected>Normal</option>
+      <option value="hard">Hard</option>
+      <option value="nightmare">Nightmare</option>
+    </select>
+  </div>
+  <div class="toggle-row"><span class="toggle-label">Boss Encounters</span><label class="toggle"><input type="checkbox" id="bosses" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="toggle-row"><span class="toggle-label">AI Group Behavior</span><label class="toggle"><input type="checkbox" id="groupAI" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="section-title">🏗️ Structures</div>
+  <div class="toggle-row"><span class="toggle-label">Villages</span><label class="toggle"><input type="checkbox" id="villages" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="toggle-row"><span class="toggle-label">Dungeons</span><label class="toggle"><input type="checkbox" id="dungeons" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="toggle-row"><span class="toggle-label">Rivers</span><label class="toggle"><input type="checkbox" id="rivers" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="toggle-row"><span class="toggle-label">Ore Deposits</span><label class="toggle"><input type="checkbox" id="ores" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="section-title">⚙️ Systems</div>
+  <div class="toggle-row"><span class="toggle-label">Day/Night Cycle</span><label class="toggle"><input type="checkbox" id="dayNight" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="toggle-row"><span class="toggle-label">Weather System</span><label class="toggle"><input type="checkbox" id="weather" checked onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="toggle-row"><span class="toggle-label">Base Building</span><label class="toggle"><input type="checkbox" id="baseBuilding" onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="toggle-row"><span class="toggle-label">Clan System</span><label class="toggle"><input type="checkbox" id="clans" onchange="update()"><span class="toggle-slider"></span></label></div>
+  <div class="field" style="margin-top:12px">
+    <label>Day Length (min) <span class="range-val" id="dayVal">20</span></label>
+    <input type="range" id="dayLength" min="5" max="60" step="5" value="20" oninput="syncRange('dayLength','dayVal');update()">
+  </div>
+</div>
+
+<div class="main">
+  <div class="preview-card">
+    <div class="preview-header">
+      <span class="preview-title">🗺 Terrain Preview</span>
+      <span class="seed-badge" id="seedBadge">seed: 12345</span>
+    </div>
+    <div class="canvas-wrap">
+      <canvas id="previewCanvas" width="900" height="300"></canvas>
+      <div class="canvas-overlay" id="biomeOverlay"></div>
+    </div>
+    <div class="stats-grid" id="statsGrid"></div>
+  </div>
+  <div class="json-card">
+    <div class="json-header">
+      <span class="json-title">📄 WorldConfig.json</span>
+      <button class="btn btn-secondary" onclick="copyJSON()" style="padding:4px 10px;font-size:11px;">Copy</button>
+    </div>
+    <pre id="jsonOutput"></pre>
+  </div>
+  <div class="steps-card">
+    <div class="steps-title">🐍 Build .rbxlx cu Python</div>
+    <div class="step"><div class="step-num">1</div><div class="step-text">Descarcă: <code>⬇ Download Config</code> → <code>world_config.json</code> lângă <code>build_world.py</code></div></div>
+    <div class="step"><div class="step-num">2</div><div class="step-text">Rulează: <code>python tools/build_world.py world_config.json</code></div></div>
+    <div class="step"><div class="step-num">3</div><div class="step-text">Se generează <code>MyWorld.rbxlx</code></div></div>
+    <div class="step"><div class="step-num">4</div><div class="step-text">Roblox Studio → <code>File → Open from File → MyWorld.rbxlx</code></div></div>
+    <div class="step"><div class="step-num">5</div><div class="step-text">Apasă <code>▶ Play</code> — lumea se generează procedural din seed</div></div>
+  </div>
+</div>
+
+<div class="notification" id="notif">✓ Copiat!</div>
+
+<script>
+const BIOME_COLORS={Forest:['#1a4a2e','#2d6e45','#3d8f5a','#1f5235','#4aab6d'],Desert:['#c4a55a','#d4b870','#e8cf8a','#b8943e','#f0df9e'],Tundra:['#8bb8d4','#a8cce0','#c0ddf0','#6a9ab8','#d8eef8'],Swamp:['#3d5c2e','#4a7038','#2e4422','#5a8040','#6a9648'],Volcanic:['#4a1a0e','#7a2a15','#c04020','#8b3018','#e06030'],Ocean:['#0a2a4a','#0d3a5c','#0a4a6a','#1a6080','#0d3060']};
+function noise(x,y,s){const n=Math.sin(x*127.1+y*311.7+s)*43758.5453;return n-Math.floor(n);}
+function smoothNoise(x,y,s){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy,ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);return noise(ix,iy,s)*(1-ux)*(1-uy)+noise(ix+1,iy,s)*ux*(1-uy)+noise(ix,iy+1,s)*(1-ux)*uy+noise(ix+1,iy+1,s)*ux*uy;}
+function fbm(x,y,s){let v=0,a=0.5,f=1,m=0;for(let i=0;i<4;i++){v+=smoothNoise(x*f,y*f,s)*a;m+=a;a*=0.5;f*=2;}return v/m;}
+function getConfig(){const biomes=[...document.querySelectorAll('.biome-chip.active')].map(c=>c.dataset.biome);return{worldName:document.getElementById('worldName').value||'MyWorld',seed:parseInt(document.getElementById('seed').value)||12345,chunkSize:parseInt(document.getElementById('chunkSize').value),renderDistance:parseInt(document.getElementById('renderDist').value),maxHeight:parseInt(document.getElementById('maxHeight').value),waterLevel:parseInt(document.getElementById('waterLevel').value),noiseScale:parseFloat(document.getElementById('noiseScale').value)/100,biomes,mobs:{density:parseInt(document.getElementById('mobDensity').value),difficulty:document.getElementById('difficulty').value,bosses:document.getElementById('bosses').checked,groupAI:document.getElementById('groupAI').checked},structures:{villages:document.getElementById('villages').checked,dungeons:document.getElementById('dungeons').checked,rivers:document.getElementById('rivers').checked,ores:document.getElementById('ores').checked},systems:{dayNightCycle:document.getElementById('dayNight').checked,weather:document.getElementById('weather').checked,baseBuilding:document.getElementById('baseBuilding').checked,clans:document.getElementById('clans').checked,dayLengthMinutes:parseInt(document.getElementById('dayLength').value)}};}
+function syncRange(id,vid){document.getElementById(vid).textContent=document.getElementById(id).value;}
+function syncNoise(){document.getElementById('noiseVal').textContent=(document.getElementById('noiseScale').value/100).toFixed(2);}
+function syncSeed(){document.getElementById('seedVal').textContent=document.getElementById('seed').value;update();}
+function toggleBiome(el){el.classList.toggle('active');update();}
+function randomSeed(){const s=Math.floor(Math.random()*9999999)+1;document.getElementById('seed').value=s;document.getElementById('seedVal').textContent=s;update();}
+function drawPreview(cfg){const canvas=document.getElementById('previewCanvas'),ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);if(!cfg.biomes.length){ctx.fillStyle='#1a1c20';ctx.fillRect(0,0,W,H);return;}const ns=cfg.noiseScale*10,seed=cfg.seed%99999;for(let x=0;x<W;x++){for(let y=0;y<H;y++){const h=fbm(x*ns/W,y*ns/H,seed),bi=Math.floor(fbm(x*ns*0.5/W+100,y*ns*0.5/H+100,seed+42)*cfg.biomes.length)%cfg.biomes.length,biome=cfg.biomes[bi],cols=BIOME_COLORS[biome]||BIOME_COLORS.Forest,ci=Math.floor(h*(cols.length-1));ctx.fillStyle=(h<cfg.waterLevel/cfg.maxHeight)?'#0a2a4a':cols[Math.max(0,Math.min(ci,cols.length-1))];ctx.fillRect(x,y,1,1);}}const g=ctx.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.9);g.addColorStop(0,'transparent');g.addColorStop(1,'rgba(0,0,0,0.5)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
+function updateStats(cfg){const tc=Math.pow(cfg.renderDistance*2+1,2),ts=cfg.chunkSize*(cfg.renderDistance*2+1);document.getElementById('statsGrid').innerHTML=[{val:tc,lbl:'Chunks loaded'},{val:ts+'s',lbl:'World diameter'},{val:cfg.biomes.length,lbl:'Biomes active'},{val:cfg.mobs.density*tc,lbl:'Max mobs'},{val:cfg.maxHeight+'s',lbl:'Max height'}].map(c=>`<div class="stat-cell"><div class="val">${c.val}</div><div class="lbl">${c.lbl}</div></div>`).join('');}
+function updateBiomeOverlay(cfg){const cols={Forest:'#3ecf8e',Desert:'#f5a623',Tundra:'#7dd3fc',Swamp:'#a3e635',Volcanic:'#fb923c',Ocean:'#38bdf8'};document.getElementById('biomeOverlay').innerHTML=cfg.biomes.map(b=>`<span class="badge" style="background:${cols[b]}22;color:${cols[b]};border:1px solid ${cols[b]}44">${b}</span>`).join('');}
+function update(){const cfg=getConfig();drawPreview(cfg);updateStats(cfg);document.getElementById('jsonOutput').textContent=JSON.stringify(cfg,null,2);document.getElementById('seedBadge').textContent='seed: '+cfg.seed;updateBiomeOverlay(cfg);}
+function copyJSON(){navigator.clipboard.writeText(JSON.stringify(getConfig(),null,2));const n=document.getElementById('notif');n.classList.add('show');setTimeout(()=>n.classList.remove('show'),2000);}
+function downloadJSON(){const cfg=getConfig(),blob=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(cfg.worldName.replace(/\s+/g,'_')||'world')+'_config.json';a.click();}
+update();
+</script>
+</body>
+</html>
