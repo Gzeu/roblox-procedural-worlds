@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Roblox World Configurator</title>
+<title>Roblox World Configurator v2</title>
 <link href="https://api.fontshare.com/v2/css?f[]=satoshi@400,500,600,700&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -22,7 +22,7 @@
 }
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
 html{-webkit-font-smoothing:antialiased;}
-body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:grid;grid-template-columns:300px 1fr;grid-template-rows:56px 1fr;}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;display:grid;grid-template-columns:300px 1fr;grid-template-rows:56px auto 1fr;}
 
 .topbar{grid-column:1/-1;display:flex;align-items:center;gap:16px;padding:0 24px;background:var(--surface);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:10;}
 .logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;}
@@ -34,6 +34,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .btn-primary:hover{background:#2db87a;}
 .btn-secondary{background:var(--surface2);color:var(--text);border:1px solid var(--border);}
 .btn-secondary:hover{background:var(--faint);}
+
+.preset-bar{grid-column:1/-1;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 20px;background:var(--surface2);border-bottom:1px solid var(--border);}
+.preset-btn{padding:5px 13px;border:1px solid var(--border);border-radius:20px;background:var(--surface);color:var(--muted);cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;font-family:var(--font);}
+.preset-btn:hover{background:var(--faint);color:var(--text);border-color:var(--accent);}
+.preset-hint{font-size:11px;color:var(--faint);margin-left:auto;}
+kbd{background:var(--surface);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-size:10px;color:var(--muted);}
 
 .sidebar{background:var(--surface);border-right:1px solid var(--border);overflow-y:auto;padding:16px;}
 .section-title{font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
@@ -55,18 +61,12 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:1
 .biome-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;}
 .biome-chip{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid transparent;transition:all 0.15s;user-select:none;}
 .biome-chip.active{border-color:currentColor;}
-.chip-forest{color:#3ecf8e;background:rgba(62,207,142,0.1);}
-.chip-forest.active{background:rgba(62,207,142,0.2);}
-.chip-desert{color:#f5a623;background:rgba(245,166,35,0.1);}
-.chip-desert.active{background:rgba(245,166,35,0.2);}
-.chip-tundra{color:#7dd3fc;background:rgba(125,211,252,0.1);}
-.chip-tundra.active{background:rgba(125,211,252,0.2);}
-.chip-swamp{color:#a3e635;background:rgba(163,230,53,0.1);}
-.chip-swamp.active{background:rgba(163,230,53,0.2);}
-.chip-volcanic{color:#fb923c;background:rgba(251,146,60,0.1);}
-.chip-volcanic.active{background:rgba(251,146,60,0.2);}
-.chip-ocean{color:#38bdf8;background:rgba(56,189,248,0.1);}
-.chip-ocean.active{background:rgba(56,189,248,0.2);}
+.chip-forest{color:#3ecf8e;background:rgba(62,207,142,0.1);}.chip-forest.active{background:rgba(62,207,142,0.2);}
+.chip-desert{color:#f5a623;background:rgba(245,166,35,0.1);}.chip-desert.active{background:rgba(245,166,35,0.2);}
+.chip-tundra{color:#7dd3fc;background:rgba(125,211,252,0.1);}.chip-tundra.active{background:rgba(125,211,252,0.2);}
+.chip-swamp{color:#a3e635;background:rgba(163,230,53,0.1);}.chip-swamp.active{background:rgba(163,230,53,0.2);}
+.chip-volcanic{color:#fb923c;background:rgba(251,146,60,0.1);}.chip-volcanic.active{background:rgba(251,146,60,0.2);}
+.chip-ocean{color:#38bdf8;background:rgba(56,189,248,0.1);}.chip-ocean.active{background:rgba(56,189,248,0.2);}
 
 .main{overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:20px;}
 .preview-card{background:var(--surface);border:1px solid var(--border);border-radius:12px;overflow:hidden;}
@@ -107,6 +107,13 @@ pre{padding:16px 18px;font-size:12px;font-family:'JetBrains Mono',monospace;colo
     <button class="btn btn-secondary" onclick="copyJSON()">📋 Copy JSON</button>
     <button class="btn btn-primary" onclick="downloadJSON()">⬇ Download Config</button>
   </div>
+</div>
+
+<div class="preset-bar">
+  <button class="preset-btn" onclick="applyPreset('Survival Island')">🏝️ Survival Island</button>
+  <button class="preset-btn" onclick="applyPreset('Volcanic Wasteland')">🌋 Volcanic Wasteland</button>
+  <button class="preset-btn" onclick="applyPreset('Arctic Tundra')">❄️ Arctic Tundra</button>
+  <span class="preset-hint">Press <kbd>Space</kbd> = random seed</span>
 </div>
 
 <div class="sidebar">
@@ -200,6 +207,13 @@ pre{padding:16px 18px;font-size:12px;font-family:'JetBrains Mono',monospace;colo
     </div>
     <pre id="jsonOutput"></pre>
   </div>
+  <div class="json-card" id="export-card">
+    <div class="json-header">
+      <span class="json-title">📦 Export — Python Command</span>
+      <button class="btn btn-secondary" onclick="copyExport()" style="padding:4px 10px;font-size:11px;">Copy</button>
+    </div>
+    <pre id="export-cmd" style="color:#7fdb7f;font-size:13px;"></pre>
+  </div>
   <div class="steps-card">
     <div class="steps-title">🐍 Build .rbxlx cu Python</div>
     <div class="step"><div class="step-num">1</div><div class="step-text">Descarcă: <code>⬇ Download Config</code> → <code>world_config.json</code> lângă <code>build_world.py</code></div></div>
@@ -226,9 +240,18 @@ function randomSeed(){const s=Math.floor(Math.random()*9999999)+1;document.getEl
 function drawPreview(cfg){const canvas=document.getElementById('previewCanvas'),ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;ctx.clearRect(0,0,W,H);if(!cfg.biomes.length){ctx.fillStyle='#1a1c20';ctx.fillRect(0,0,W,H);return;}const ns=cfg.noiseScale*10,seed=cfg.seed%99999;for(let x=0;x<W;x++){for(let y=0;y<H;y++){const h=fbm(x*ns/W,y*ns/H,seed),bi=Math.floor(fbm(x*ns*0.5/W+100,y*ns*0.5/H+100,seed+42)*cfg.biomes.length)%cfg.biomes.length,biome=cfg.biomes[bi],cols=BIOME_COLORS[biome]||BIOME_COLORS.Forest,ci=Math.floor(h*(cols.length-1));ctx.fillStyle=(h<cfg.waterLevel/cfg.maxHeight)?'#0a2a4a':cols[Math.max(0,Math.min(ci,cols.length-1))];ctx.fillRect(x,y,1,1);}}const g=ctx.createRadialGradient(W/2,H/2,H*0.3,W/2,H/2,H*0.9);g.addColorStop(0,'transparent');g.addColorStop(1,'rgba(0,0,0,0.5)');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);}
 function updateStats(cfg){const tc=Math.pow(cfg.renderDistance*2+1,2),ts=cfg.chunkSize*(cfg.renderDistance*2+1);document.getElementById('statsGrid').innerHTML=[{val:tc,lbl:'Chunks loaded'},{val:ts+'s',lbl:'World diameter'},{val:cfg.biomes.length,lbl:'Biomes active'},{val:cfg.mobs.density*tc,lbl:'Max mobs'},{val:cfg.maxHeight+'s',lbl:'Max height'}].map(c=>`<div class="stat-cell"><div class="val">${c.val}</div><div class="lbl">${c.lbl}</div></div>`).join('');}
 function updateBiomeOverlay(cfg){const cols={Forest:'#3ecf8e',Desert:'#f5a623',Tundra:'#7dd3fc',Swamp:'#a3e635',Volcanic:'#fb923c',Ocean:'#38bdf8'};document.getElementById('biomeOverlay').innerHTML=cfg.biomes.map(b=>`<span class="badge" style="background:${cols[b]}22;color:${cols[b]};border:1px solid ${cols[b]}44">${b}</span>`).join('');}
-function update(){const cfg=getConfig();drawPreview(cfg);updateStats(cfg);document.getElementById('jsonOutput').textContent=JSON.stringify(cfg,null,2);document.getElementById('seedBadge').textContent='seed: '+cfg.seed;updateBiomeOverlay(cfg);}
-function copyJSON(){navigator.clipboard.writeText(JSON.stringify(getConfig(),null,2));const n=document.getElementById('notif');n.classList.add('show');setTimeout(()=>n.classList.remove('show'),2000);}
+function updateExportCmd(){const cfg=getConfig();const name=cfg.worldName.replace(/\s+/g,'_');const el=document.getElementById('export-cmd');if(el)el.textContent='python tools/build_world.py configs/default_world.json '+name+'_'+cfg.seed+'.rbxlx';}
+function copyExport(){const t=document.getElementById('export-cmd')?.textContent;if(t){navigator.clipboard.writeText(t);showNotif('✓ Comandă copiată!');}}
+function showNotif(msg){const n=document.getElementById('notif');n.textContent=msg||'✓ Copiat!';n.classList.add('show');setTimeout(()=>{n.textContent='✓ Copiat!';n.classList.remove('show');},2000);}
+function update(){const cfg=getConfig();drawPreview(cfg);updateStats(cfg);document.getElementById('jsonOutput').textContent=JSON.stringify(cfg,null,2);document.getElementById('seedBadge').textContent='seed: '+cfg.seed;updateBiomeOverlay(cfg);updateExportCmd();}
+function copyJSON(){navigator.clipboard.writeText(JSON.stringify(getConfig(),null,2));showNotif('✓ JSON copiat!');}
 function downloadJSON(){const cfg=getConfig(),blob=new Blob([JSON.stringify(cfg,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=(cfg.worldName.replace(/\s+/g,'_')||'world')+'_config.json';a.click();}
+
+const PRESETS={"Survival Island":{worldName:"Survival Island",seed:777000,chunkSize:64,renderDistance:4,maxHeight:90,waterLevel:30,noiseScale:0.045,biomes:["Forest","Desert","Swamp"],mobs:{density:6,difficulty:"normal",bosses:true,groupAI:true},structures:{villages:true,dungeons:true,rivers:true,ores:true},systems:{dayNightCycle:true,weather:true,baseBuilding:false,clans:false,dayLengthMinutes:20}},"Volcanic Wasteland":{worldName:"Volcanic Wasteland",seed:666999,chunkSize:64,renderDistance:3,maxHeight:140,waterLevel:8,noiseScale:0.06,biomes:["Volcanic","Desert"],mobs:{density:8,difficulty:"hard",bosses:true,groupAI:true},structures:{villages:false,dungeons:true,rivers:false,ores:true},systems:{dayNightCycle:true,weather:false,baseBuilding:false,clans:false,dayLengthMinutes:15}},"Arctic Tundra":{worldName:"Arctic Tundra",seed:112233,chunkSize:64,renderDistance:3,maxHeight:100,waterLevel:15,noiseScale:0.04,biomes:["Tundra","Ocean"],mobs:{density:4,difficulty:"hard",bosses:false,groupAI:false},structures:{villages:false,dungeons:false,rivers:true,ores:true},systems:{dayNightCycle:true,weather:true,baseBuilding:false,clans:false,dayLengthMinutes:25}}};
+function applyPreset(name){const p=PRESETS[name];if(!p)return;document.getElementById('worldName').value=p.worldName;document.getElementById('seed').value=p.seed;document.getElementById('seedVal').textContent=p.seed;document.getElementById('chunkSize').value=p.chunkSize;document.getElementById('chunkVal').textContent=p.chunkSize;document.getElementById('renderDist').value=p.renderDistance;document.getElementById('renderVal').textContent=p.renderDistance;document.getElementById('maxHeight').value=p.maxHeight;document.getElementById('heightVal').textContent=p.maxHeight;document.getElementById('waterLevel').value=p.waterLevel;document.getElementById('waterVal').textContent=p.waterLevel;document.getElementById('noiseScale').value=Math.round(p.noiseScale*100);document.getElementById('noiseVal').textContent=p.noiseScale.toFixed(3);document.getElementById('difficulty').value=p.mobs.difficulty;document.getElementById('mobDensity').value=p.mobs.density;document.getElementById('densityVal').textContent=p.mobs.density;document.getElementById('bosses').checked=p.mobs.bosses;document.getElementById('groupAI').checked=p.mobs.groupAI;document.getElementById('villages').checked=p.structures.villages;document.getElementById('dungeons').checked=p.structures.dungeons;document.getElementById('rivers').checked=p.structures.rivers;document.getElementById('ores').checked=p.structures.ores;document.getElementById('dayNight').checked=p.systems.dayNightCycle;document.getElementById('weather').checked=p.systems.weather;document.getElementById('baseBuilding').checked=p.systems.baseBuilding;document.getElementById('clans').checked=p.systems.clans;document.getElementById('dayLength').value=p.systems.dayLengthMinutes;document.getElementById('dayVal').textContent=p.systems.dayLengthMinutes;document.querySelectorAll('.biome-chip').forEach(cb=>{cb.classList.toggle('active',p.biomes.includes(cb.dataset.biome));});update();showNotif('✓ Preset: '+name);}
+
+document.addEventListener('keydown',function(e){if(e.code==='Space'&&document.activeElement.tagName!=='INPUT'&&document.activeElement.tagName!=='TEXTAREA'){e.preventDefault();randomSeed();}});
+
 update();
 </script>
 </body>
