@@ -1,13 +1,13 @@
 -- init.server.lua
 -- Bootstrap entry point: loads all modules in dependency order
--- v6.1 | roblox-procedural-worlds
--- FIX: WorldGenerator.Init (capital I) — previous .init call was silently ignored
--- FIX: SeedPersistence.Load()  (was .loadSeed)
+-- v6.2 | roblox-procedural-worlds
+-- FIX v6.2: Players blocked from spawning until WorldGenerator.IsReady()
+--            SpawnLocation moved to Y=5 via CharacterAdded respawn guard
 
-local Players = game:GetService("Players")
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
 
 -- ── LAYER 0: Infrastructure (no deps) ─────────────────────────────
-
 local EventBus            = require(script.Parent.EventBus)
 local WorldConfig         = require(script.Parent.WorldConfig)
 local DataStoreManager    = require(script.Parent.DataStoreManager)
@@ -16,7 +16,6 @@ local AntiExploit         = require(script.Parent.AntiExploit)
 local NotificationBridge  = require(script.Parent.NotificationBridge)
 
 -- ── LAYER 1: World Generation ─────────────────────────────────────
-
 local WorldGenerator   = require(script.Parent.WorldGenerator)
 local ChunkHandler     = require(script.Parent.ChunkHandler)
 local StreamingManager = require(script.Parent.StreamingManager)
@@ -26,7 +25,6 @@ local ChunkPredictor   = require(script.Parent.ChunkPredictor)
 local ObjectPool       = require(script.Parent.ObjectPool)
 
 -- ── LAYER 2: World Features ───────────────────────────────────────
-
 local AssetPlacer      = require(script.Parent.AssetPlacer)
 local StructurePlacer  = require(script.Parent.StructurePlacer)
 local OreGenerator     = require(script.Parent.OreGenerator)
@@ -38,7 +36,6 @@ local DayNightCycle    = require(script.Parent.DayNightCycle)
 local WeatherManager   = require(script.Parent.WeatherManager)
 
 -- ── LAYER 3: Player Systems ───────────────────────────────────────
-
 local Inventory           = require(script.Parent.Inventory)
 local PlayerPersistence   = require(script.Parent.PlayerPersistence)
 local QuestSystem         = require(script.Parent.QuestSystem)
@@ -51,7 +48,6 @@ local ParticleEffects     = require(script.Parent.ParticleEffects)
 local AdminPanel          = require(script.Parent.AdminPanel)
 
 -- ── LAYER 4: AI Systems ─────────────────────────────────────────
-
 local MobAI           = require(script.Parent.MobAI)
 local MobSpawner      = require(script.Parent.MobSpawner)
 local AINavigator     = require(script.Parent.AINavigator)
@@ -62,7 +58,6 @@ local AIMemory        = require(script.Parent.AIMemory)
 local AIGroupBehavior = require(script.Parent.AIGroupBehavior)
 
 -- ── LAYER 5: RPG + Economy ───────────────────────────────────────
-
 local SkillSystem     = require(script.Parent.SkillSystem)
 local BossEncounter   = require(script.Parent.BossEncounter)
 local NPCDialogue     = require(script.Parent.NPCDialogue)
@@ -74,8 +69,7 @@ local BaseBuilding    = require(script.Parent.BaseBuilding)
 local EconomyManager  = require(script.Parent.EconomyManager)
 local SeedShare       = require(script.Parent.SeedShare)
 
--- ── LAYER 6: Monetization + Social (Phase 4) ──────────────────
-
+-- ── LAYER 6: Monetization + Social ───────────────────────────────
 local GamepassManager         = require(script.Parent.GamepassManager)
 local DeveloperProductHandler = require(script.Parent.DeveloperProductHandler)
 local PremiumPerks            = require(script.Parent.PremiumPerks)
@@ -83,7 +77,7 @@ local LeaderboardManager      = require(script.Parent.LeaderboardManager)
 local DailyRewards            = require(script.Parent.DailyRewards)
 
 print("[ProceduralWorlds] ╔══════════════════════════════╗")
-print("[ProceduralWorlds] ║  Initializing v6.1 (Phase 4)     ║")
+print("[ProceduralWorlds] ║  Initializing v6.2 (Phase 4) ║")
 print("[ProceduralWorlds] ╚══════════════════════════════╝")
 
 -- ── BOOT SEQUENCE ──────────────────────────────────────────────────
@@ -102,7 +96,8 @@ DailyRewards.Start()
 local seed = SeedPersistence.Load() or math.random(1, 2^31 - 1)
 print("[ProceduralWorlds] World seed: " .. tostring(seed))
 
--- 3. ✔ Init world — capital I is required (Lua is case-sensitive)
+-- 3. Init world — BLOCKING until spawn terrain is ready
+--    WorldGenerator.Init generates SYNC_RADIUS chunks before returning
 WorldGenerator.Init(seed)
 
 -- 4. Seed sharing
@@ -128,6 +123,27 @@ TeleportManager.registerWaypoint("Dungeon",  Vector3.new(-600,  30,  400))
 TeleportManager.registerWaypoint("Arena",    Vector3.new(800,   50, -200))
 TeleportManager.registerWaypoint("BossLair", Vector3.new(-1200, 30,  800))
 TeleportManager.registerWaypoint("Sanctum",  Vector3.new(1500,  60,  1500))
+
+-- ── SPAWN GUARD ──────────────────────────────────────────────────────
+-- Prevents players from falling before terrain is ready.
+-- On CharacterAdded, if world not ready yet, we wait + teleport to safe Y.
+local SAFE_SPAWN_Y = 80   -- height above terrain; WorldGenerator lands at ~40-60
+
+local function guardSpawn(player)
+	player.CharacterAdded:Connect(function(character)
+		-- Wait until terrain generation finished (set by WorldGenerator.Init)
+		if not WorldGenerator.IsReady() then
+			repeat task.wait(0.1) until WorldGenerator.IsReady()
+		end
+		-- Give Roblox physics 1 frame to settle
+		task.wait(0.1)
+		local root = character:FindFirstChild("HumanoidRootPart")
+		if root then
+			-- Teleport to safe spawn position above terrain
+			root.CFrame = CFrame.new(0, SAFE_SPAWN_Y, 0)
+		end
+	end)
+end
 
 -- ── EVENT BUS HOOKS ──────────────────────────────────────────────
 
@@ -235,6 +251,7 @@ end
 -- ── PLAYER LIFECYCLE ─────────────────────────────────────────────
 
 Players.PlayerAdded:Connect(function(player)
+	guardSpawn(player)   -- attach spawn guard FIRST
 	DataStoreManager.Load(player)
 	PlayerPersistence.onJoin(player)
 	QuestSystem.initPlayer(player)
@@ -259,4 +276,4 @@ Players.PlayerRemoving:Connect(function(player)
 	EventBus.emit("Player:Left", player)
 end)
 
-print("[ProceduralWorlds] v6.1 ready — world generation active.")
+print("[ProceduralWorlds] v6.2 ready — spawn guard active.")

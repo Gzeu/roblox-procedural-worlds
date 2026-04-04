@@ -1,6 +1,6 @@
 -- WorldGenerator.lua
 -- Master orchestrator — all subsystems
--- v2.6.0 — fixed: all requires via script.Parent; BuildChunk → GenerateChunk
+-- v2.7.0 — FIX: initial chunks generated SYNC so player never spawns in void
 
 local WorldConfig       = require(script.Parent.WorldConfig)
 local BiomeResolver     = require(script.Parent.BiomeResolver)
@@ -25,13 +25,16 @@ local RunService = game:GetService("RunService")
 
 local WorldGenerator = {}
 
-local currentSeed  = 0
-local initialized  = false
-local activeChunks = {}
+local currentSeed   = 0
+local initialized   = false
+local activeChunks  = {}
+local worldReady    = false   -- set to true after initial terrain is done
 
-function WorldGenerator.GetSeed()  return currentSeed end
-function WorldGenerator.SetSeed(s) currentSeed = s; SeedPersistence.Save(s) end
+function WorldGenerator.GetSeed()    return currentSeed end
+function WorldGenerator.IsReady()    return worldReady  end
+function WorldGenerator.SetSeed(s)   currentSeed = s; SeedPersistence.Save(s) end
 
+-- ── Generate one chunk (idempotent) ────────────────────────────────────
 function WorldGenerator.GenerateChunk(cx, cz)
 	local key = cx .. "," .. cz
 	if activeChunks[key] then return end
@@ -40,16 +43,15 @@ function WorldGenerator.GenerateChunk(cx, cz)
 	local worldX = cx * WorldConfig.Settings.ChunkSize
 	local worldZ = cz * WorldConfig.Settings.ChunkSize
 
-	-- GenerateChunk returns nothing; terrain is filled directly into Workspace.Terrain
 	ChunkHandler.GenerateChunk(worldX, worldZ, currentSeed)
 	LODManager.RegisterChunk(cx, cz, nil)
-
 	OreGenerator.PlaceOres(worldX, worldZ, currentSeed)
 	RiverCarver.CarveAt(worldX, worldZ, currentSeed)
 	DungeonGenerator.TrySpawnAt(worldX, worldZ, currentSeed)
 	VillageGenerator.TrySpawnAt(worldX, worldZ, currentSeed)
 end
 
+-- ── Init ───────────────────────────────────────────────────────────────
 function WorldGenerator.Init(forceSeed)
 	if initialized then return end
 	initialized = true
@@ -77,15 +79,31 @@ function WorldGenerator.Init(forceSeed)
 	LODManager.Start()
 	AdminPanel.Init(WorldGenerator, MobSpawner)
 
-	-- Generate initial chunk grid around spawn
+	-- ── CRITICAL FIX: generate spawn-area chunks SYNCHRONOUSLY ────────
+	-- Players must not be allowed in until terrain at (0,0) exists.
+	-- We generate a tight 1-chunk radius sync first, then async outer ring.
 	local rd = WorldConfig.Settings.RenderDistance or 3
+	local SYNC_RADIUS = 1  -- guaranteed before first spawn
+
+	print("[WorldGenerator] Generating spawn terrain (sync)...")
+	for dx = -SYNC_RADIUS, SYNC_RADIUS do
+		for dz = -SYNC_RADIUS, SYNC_RADIUS do
+			WorldGenerator.GenerateChunk(dx, dz)   -- blocking call
+		end
+	end
+	print("[WorldGenerator] Spawn terrain ready — players may enter.")
+	worldReady = true
+
+	-- Outer chunks async (no blocking)
 	for dx = -rd, rd do
 		for dz = -rd, rd do
-			task.spawn(WorldGenerator.GenerateChunk, dx, dz)
+			if math.abs(dx) > SYNC_RADIUS or math.abs(dz) > SYNC_RADIUS then
+				task.spawn(WorldGenerator.GenerateChunk, dx, dz)
+			end
 		end
 	end
 
-	-- Track players
+	-- Track players for dynamic streaming
 	Players.PlayerAdded:Connect(function(player)
 		player.CharacterAdded:Connect(function()
 			WorldGenerator._TrackPlayer(player)
@@ -96,6 +114,7 @@ function WorldGenerator.Init(forceSeed)
 	end
 end
 
+-- ── Track player position and stream nearby chunks ─────────────────────
 function WorldGenerator._TrackPlayer(player)
 	local lastCX, lastCZ = nil, nil
 	RunService.Heartbeat:Connect(function()
