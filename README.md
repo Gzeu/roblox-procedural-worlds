@@ -1,8 +1,8 @@
 # 🌍 roblox-procedural-worlds
 
-> A fully modular, seed-driven procedural world generation framework for Roblox — with a complete AI layer, anime RPG combat, roguelite dungeon runs, base building and player economy.
+> A fully modular, seed-driven procedural world generation framework for Roblox — with a complete AI layer, anime RPG combat, roguelite dungeon runs, base building, player economy, procedural animations and spatial audio.
 
-[![Version](https://img.shields.io/badge/version-6.1.0-blue)](#)
+[![Version](https://img.shields.io/badge/version-7.0.0-blue)](#)
 [![License](https://img.shields.io/badge/license-MIT-green)](./LICENSE)
 [![Roblox](https://img.shields.io/badge/platform-Roblox%20Studio-red)](#)
 [![Status](https://img.shields.io/badge/status-stable-brightgreen)](#)
@@ -60,8 +60,6 @@
 | `GamepassManager` | Gamepass ownership checks + perks |
 | `DeveloperProductHandler` | Developer product purchase handling |
 | `PremiumPerks` | Roblox Premium benefit handler |
-| `TeleportManager` | Waypoints + cross-server teleport |
-| `ClanSystem` 🏯 | Weighted clan roll, passive stat bonuses |
 | `FactionSystem` | Faction allegiance + rep system |
 | `ObjectPool` | Generic instance pooling |
 | `EventBus` | Lightweight pub/sub event system |
@@ -72,8 +70,12 @@
 | **`AIConfig`** 🤖 | Per-mob config + BT presets |
 | **`AIMemory`** 🧠 | Per-mob persistent memory (last target, observed positions) |
 | **`AIGroupBehavior`** 🧠 | Pack coordination: alert leader, flanker, retreat signaler |
+| **`AnimationManager`** 🎬 | Procedural TweenService animations — idle sway, walk bob, attack lunge, death fade |
+| **`SoundManager`** 🔊 | Positional 3D audio — rbxasset:// only, zero upload required |
+| **`AmbienceClient`** 🎵 | Per-biome ambient crossfade (2s) — LocalScript, polls `CurrentBiome` attribute |
+| **`InventoryRemote`** 📦 | Server RemoteFunction bridge — getSlots / drop / use / equip |
 
-> 🤖 = v3.0 · 🧠⚔️ = v4.0 · 🥋⚡🏯🎲🏗️💰 = v5.0 · 🔧 = v6.1 fixes
+> 🤖 = v3.0 · 🧠 = v4.0 · 🥋⚡🏯🎲🏗️💰 = v5.0 · 🔧 = v6.1 · 🎬🔊🎵📦 = **v7.0**
 
 ---
 
@@ -98,7 +100,8 @@ Open the generated `.rbxlx` in Studio → press **F5** → world generates autom
 1. Copy all files from `src/` into **ServerScriptService** in Studio
 2. Rename `init.server.lua` → `Script` (set as ServerScript)
 3. All other `.lua` files → `ModuleScript`
-4. Press **F5**
+4. Files ending in `.client.lua` → `LocalScript` inside **StarterPlayerScripts**
+5. Press **F5**
 
 > ⚠️ All modules use `script.Parent.ModuleName` for requires — they must all live in the **same folder** (ServerScriptService or a sub-folder).
 
@@ -141,6 +144,8 @@ roblox-procedural-worlds/
 │   ├── NPCDialogue.lua
 │   ├── NPCDialogueClient.lua     # LocalScript
 │   ├── Inventory.lua
+│   ├── InventoryRemote.lua       # RemoteFunction bridge (v7.0)
+│   ├── InventoryUI.client.lua    # LocalScript
 │   ├── PlayerPersistence.lua
 │   ├── DataStoreManager.lua
 │   ├── LootTable.lua
@@ -176,7 +181,18 @@ roblox-procedural-worlds/
 │   ├── RunModifiers.lua
 │   ├── BaseBuilding.lua
 │   ├── EconomyManager.lua
-│   └── ObjectPool.lua
+│   ├── ObjectPool.lua
+│   │
+│   ├── # ── v7.0 Animations + Audio ──────────────────
+│   ├── AnimationManager.lua      # Procedural TweenService anims
+│   ├── SoundManager.lua          # 3D positional audio
+│   ├── AmbienceClient.client.lua # LocalScript — biome crossfade
+│   │
+│   ├── # ── UI ───────────────────────────────────────
+│   ├── HUD.client.lua            # LocalScript
+│   ├── MinimapUI.client.lua      # LocalScript
+│   ├── QuestTracker.client.lua   # LocalScript
+│   └── DialogueUI.client.lua     # LocalScript
 │
 ├── build.py                      # Rojo project builder
 ├── CHANGELOG.md
@@ -221,6 +237,108 @@ WorldConfig.BUILDING_MAX_PER_PLAYER    = 100
 
 ---
 
+## 🎬 v7.0 — Animations & Audio
+
+### AnimationManager API
+
+```lua
+local AnimationManager = require(script.Parent.AnimationManager)
+
+AnimationManager.playIdle(mobModel)     -- gentle ±2° sway at 1 Hz
+AnimationManager.playWalk(mobModel)     -- Y bob ±0.2 st at 4 Hz
+AnimationManager.playAttack(mobModel)   -- forward lunge +1.5 st
+AnimationManager.playDeath(mobModel)    -- fall + fade, destroy after 3s
+AnimationManager.stop(mobModel)         -- cancel current anim cleanly
+```
+
+All animations are **TweenService-based** — no AnimationId uploads required. Works on any rig that has a `HumanoidRootPart` or any `BasePart`.
+
+### SoundManager API
+
+```lua
+local SoundManager = require(script.Parent.SoundManager)
+
+-- Play a positional 3D sound at world coordinates
+SoundManager.playAtPosition("hit",       Vector3.new(0, 10, 0))
+SoundManager.playAtPosition("explosion", bossHRP.Position, 1.0, 0.9)
+
+-- Play near a player (server fallback)
+SoundManager.playForPlayer(player, "levelup")
+
+-- Swap looping ambient (called from AmbienceClient on client)
+SoundManager.setAmbience("Forest")
+```
+
+Built-in sound keys: `hit`, `explosion`, `levelup`, `step`, `ambient_forest`, `click`, `death`, `splash`, `swing`, `build`
+
+### AmbienceClient (LocalScript)
+
+Place `AmbienceClient.client.lua` in **StarterPlayerScripts**. It automatically reads `character:GetAttribute("CurrentBiome")` every 5 seconds and crossfades the ambient loop over 2 seconds.
+
+To drive it from the server set the attribute on the character:
+```lua
+-- In BiomeResolver or StreamingManager, server-side:
+player.Character:SetAttribute("CurrentBiome", "Desert")
+```
+
+### InventoryRemote API
+
+```lua
+-- Client-side (from InventoryUI.client.lua):
+local rf = ReplicatedStorage.ProceduralWorldsRemotes.InventoryRemote
+local slots = rf:InvokeServer("getSlots")   -- returns array of {name, quantity, color}
+rf:InvokeServer("use",   slotIndex)
+rf:InvokeServer("drop",  slotIndex)
+rf:InvokeServer("equip", slotIndex)
+```
+
+---
+
+## 🧪 Testing Checklist
+
+### Minimum test in Studio (F5 / Play Solo)
+
+| # | What to verify | Expected result |
+|---|---|---|
+| 1 | Press **F5** | Output shows `[WorldGenerator] Seed: XXXXXXX` |
+| 2 | Walk around | Terrain chunks load/unload, no void gaps |
+| 3 | Check Output | No red errors from any `src/` module |
+| 4 | Open Output → filter `warn` | Only cosmetic Roblox ChatScript warnings (safe to ignore) |
+| 5 | Kill a mob | Death animation plays, model fades out and destroys |
+| 6 | Walk into different terrain zones | AmbienceClient crossfades ambient sound |
+| 7 | Open inventory (I key default) | Slots render via `InventoryUI.client.lua` |
+| 8 | Craft or pick up item | Inventory slot count updates in HUD |
+| 9 | Enter a dungeon area | `DungeonGenerator` rooms spawn, mobs present |
+| 10 | Wait 60s idle | Day/Night cycle progresses, weather may change |
+
+### Verifying animations (quick test script)
+
+Paste this in the **Command Bar** during Play mode to test AnimationManager manually:
+
+```lua
+local AnimationManager = require(game.ServerScriptService.AnimationManager)
+local mob = workspace:FindFirstChildWhichIsA("Model")
+if mob then AnimationManager.playWalk(mob) end
+```
+
+### Verifying sound (Command Bar)
+
+```lua
+local SM = require(game.ServerScriptService.SoundManager)
+SM.playAtPosition("explosion", Vector3.new(0, 20, 0), 1.0)
+```
+
+### Common test failures & fixes
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `attempt to index nil (SoundManager)` | LocalScript trying to require a ServerScript | Use `InventoryRemote` from client; never require server modules directly |
+| Ambient sound doesn't change | `CurrentBiome` attribute not set on character | Add `player.Character:SetAttribute("CurrentBiome", "Forest")` in server init |
+| Animation plays but model teleports | `HumanoidRootPart` is welded / `Anchored = false` | Set `Anchored = true` on the root part or use `PrimaryPart` |
+| `InventoryRemote` returns nil | `Inventory.getSlots` not implemented | Verify `Inventory.lua` exports `getSlots(player)` function |
+
+---
+
 ## 🤖 AI Architecture
 
 ```
@@ -243,6 +361,8 @@ WorldConfig.BUILDING_MAX_PER_PLAYER    = 100
 │  Idle → Patrol → Alert → Chase → Attack → Flee      │
 │         delegates movement to AINavigator           │
 │         stores context in AIMemory (v4.0)           │
+│         triggers AnimationManager (v7.0) 🎬         │
+│         triggers SoundManager (v7.0) 🔊             │
 └──────────────────────┬──────────────────────────────┘
                        │ optional per-tick decisions
                        ▼
@@ -328,10 +448,13 @@ These are **Roblox built-in chat warnings** — not from this framework. They ar
 - Or set `WorldConfig.Settings.BaseY = 40` to raise base terrain
 
 ### `require` errors — module not found
-All modules must be siblings in the **same folder**. Do not split them across ServerScriptService and ReplicatedStorage — only `WeatherClient` and `NPCDialogueClient` (LocalScripts) may reference ReplicatedStorage for RemoteEvents.
+All modules must be siblings in the **same folder**. Do not split them across ServerScriptService and ReplicatedStorage — only `WeatherClient`, `AmbienceClient`, `InventoryUI`, `HUD`, `MinimapUI`, `QuestTracker`, and `DialogueUI` (LocalScripts) go into **StarterPlayerScripts**.
 
 ### Assets / structures not appearing
 `AssetPlacer` and `StructurePlacer` look for models in **ServerStorage** by name. Add your tree/rock/bush and structure models there. Missing models produce a `warn()` but do not crash.
+
+### Ambient sound doesn't change biome
+Set the `CurrentBiome` attribute on the player's character from the server (e.g. inside `BiomeResolver` or `StreamingManager`) and `AmbienceClient` will detect it within 5 seconds.
 
 ---
 
