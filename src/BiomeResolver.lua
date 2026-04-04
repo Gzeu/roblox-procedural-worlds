@@ -1,12 +1,11 @@
 --!strict
 -- ============================================================
--- MODULE: ReplicatedStorage/BiomeResolver  [v2]
+-- MODULE: BiomeResolver  [v2.1 - fixed]
 -- Maps (temperature, moisture) → biome using inverse-square-distance.
 -- 9 biome poles — add more by inserting into BIOME_POLES.
 -- ============================================================
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
+local WorldConfig = require(script.Parent.WorldConfig)
 
 export type BiomeDef = {
 	Name: string,
@@ -64,8 +63,14 @@ function BiomeResolver.Resolve(temperature: number, moisture: number): BiomeResu
 		end
 	end
 
+	local biomeData = WorldConfig.Biomes and WorldConfig.Biomes[dominantBiome]
+	if not biomeData then
+		warn("[BiomeResolver] Missing biome def:", dominantBiome, "- falling back to Grassland")
+		biomeData = WorldConfig.Biomes and WorldConfig.Biomes["Grassland"]
+	end
+
 	return {
-		Biome        = WorldConfig.Biomes[dominantBiome] :: BiomeDef,
+		Biome        = biomeData :: BiomeDef,
 		BlendFactors = blendFactors,
 	}
 end
@@ -73,10 +78,11 @@ end
 -- Probabilistic material blending at biome edges (>18% secondary influence)
 function BiomeResolver.GetSurfaceMaterial(result: BiomeResult): Enum.Material
 	local dominant = result.Biome
+	if not dominant then return Enum.Material.Grass end
 	for name, factor in result.BlendFactors do
 		if name ~= dominant.Name and factor > 0.18 then
 			if math.random() < factor then
-				local secondary = WorldConfig.Biomes[name]
+				local secondary = WorldConfig.Biomes and WorldConfig.Biomes[name]
 				if secondary then return secondary.SurfaceMaterial end
 			end
 		end

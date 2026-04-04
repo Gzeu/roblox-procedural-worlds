@@ -1,150 +1,85 @@
 --!strict
 -- ============================================================
--- MODULE: ReplicatedStorage/StreamingManager  [v2 NEW]
--- Runtime chunk loader/unloader.
--- Tracks which chunks have been generated; generates new ones
--- when a player enters their radius, and clears terrain voxels
--- for chunks that are too far from all players.
---
--- Usage: call StreamingManager.Start(seed) after initial world gen.
+-- MODULE: StreamingManager  [v1.1 - fixed]
+-- Manages chunk streaming: load near players, unload far chunks.
 -- ============================================================
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Players           = game:GetService("Players")
-local Workspace         = game:GetService("Workspace")
+local WorldConfig = require(script.Parent.WorldConfig)
 
-local WorldConfig  = require(ReplicatedStorage:WaitForChild("WorldConfig"))
-local ChunkHandler = require(ReplicatedStorage:WaitForChild("ChunkHandler"))
-
-local Terrain = Workspace.Terrain
-
-type ChunkKey = string   -- "cx,cz"
-type ChunkState = "loaded" | "unloaded"
+local Players    = game:GetService("Players")
+local RunService = game:GetService("RunService")
 
 local StreamingManager = {}
 
--- Track loaded chunks: key → state
-local chunkStates: { [ChunkKey]: ChunkState } = {}
--- Track active generation tasks to avoid double-spawning
-local generating: { [ChunkKey]: boolean } = {}
+local loadedChunks:  { [string]: boolean } = {}
+local pendingChunks: { string }            = {}
+local currentSeed = 0
 
--- ----------------------------------------------------------------
--- Helpers
--- ----------------------------------------------------------------
-local function chunkKey(cx: number, cz: number): ChunkKey
+local WorldGenerator  -- lazy-required to avoid circular dep
+
+local function key(cx: number, cz: number): string
 	return cx .. "," .. cz
 end
 
--- Snap a world coordinate to its chunk origin
-local function snapToChunk(v: number, chunkSize: number): number
-	return math.floor(v / chunkSize) * chunkSize
+function StreamingManager.RequestChunk(cx: number, cz: number)
+	local k = key(cx, cz)
+	if loadedChunks[k] then return end
+	if not table.find(pendingChunks, k) then
+		table.insert(pendingChunks, k)
+	end
 end
 
--- Get all chunk origins within radius of a world position
-local function getChunksInRadius(
-	wx: number, wz: number,
-	radius: number, chunkSize: number
-): { { x: number, z: number } }
-	local result = {}
-	for dx = -radius, radius, chunkSize do
-		for dz = -radius, radius, chunkSize do
-			if dx * dx + dz * dz <= radius * radius then
-				local cx = snapToChunk(wx + dx, chunkSize)
-				local cz = snapToChunk(wz + dz, chunkSize)
-				table.insert(result, { x = cx, z = cz })
+function StreamingManager.Start(seed: number)
+	currentSeed = seed
+
+	-- Lazy require to avoid circular dependency
+	if not WorldGenerator then
+		WorldGenerator = require(script.Parent.WorldGenerator)
+	end
+
+	local PROCESS_PER_FRAME = 2
+	local UNLOAD_DISTANCE   = (WorldConfig.Settings.RenderDistance or 3) + 2
+
+	RunService.Heartbeat:Connect(function()
+		-- Process pending queue
+		for i = 1, math.min(PROCESS_PER_FRAME, #pendingChunks) do
+			local k = table.remove(pendingChunks, 1)
+			if not k then break end
+			if not loadedChunks[k] then
+				loadedChunks[k] = true
+				local cx, cz = k:match("(-?%d+),(-?%d+)")
+				if cx and cz then
+					task.spawn(WorldGenerator.GenerateChunk, tonumber(cx), tonumber(cz))
+				end
 			end
 		end
-	end
-	return result
-end
 
--- Clear terrain voxels for a chunk (replace with Air)
-local function unloadChunk(cx: number, cz: number)
-	local cfg   = WorldConfig.Settings
-	local vSize = cfg.VoxelSize
-	-- Erase from deep bedrock to max mountain height
-	local minY = cfg.CaveMinY - vSize * 4
-	local maxY = cfg.BaseY + cfg.MountainAmplitude + cfg.TerrainAmplitude + vSize * 4
-	local size = Vector3.new(cfg.ChunkSize, maxY - minY, cfg.ChunkSize)
-	local centerY = (maxY + minY) / 2
-	local center = Vector3.new(
-		cx + cfg.ChunkSize / 2,
-		centerY,
-		cz + cfg.ChunkSize / 2
-	)
-	local ok, err = pcall(Terrain.FillBlock, Terrain,
-		CFrame.new(center), size, Enum.Material.Air)
-	if not ok then
-		warn("[StreamingManager] Unload error:", err)
-	end
-end
+		-- Unload far chunks
+		local toUnload = {}
+		for _, player in ipairs(Players:GetPlayers()) do
+			local char = player.Character
+			if not char then continue end
+			local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
+			if not root then continue end
+			local pcx = math.floor(root.Position.X / WorldConfig.Settings.ChunkSize)
+			local pcz = math.floor(root.Position.Z / WorldConfig.Settings.ChunkSize)
 
--- ----------------------------------------------------------------
--- Start: begins the streaming loop
--- ----------------------------------------------------------------
-function StreamingManager.Start(seed: number)
-	local cfg = WorldConfig.Settings
-
-	task.spawn(function()
-		while true do
-			task.wait(cfg.StreamingCheckInterval)
-
-			-- Gather all required chunk keys from all player positions
-			local requiredKeys: { [ChunkKey]: { x: number, z: number } } = {}
-
-			for _, player in Players:GetPlayers() do
-				local char = player.Character
-				if not char then continue end
-				local root = char:FindFirstChild("HumanoidRootPart") :: BasePart?
-				if not root then continue end
-
-				local pos = root.Position
-				local nearby = getChunksInRadius(
-					pos.X, pos.Z,
-					cfg.StreamingRadius,
-					cfg.ChunkSize
-				)
-				for _, coord in nearby do
-					requiredKeys[chunkKey(coord.x, coord.z)] = coord
+			for k in loadedChunks do
+				local cx, cz = k:match("(-?%d+),(-?%d+)")
+				if cx and cz then
+					local dx = math.abs(tonumber(cx)! - pcx)
+					local dz = math.abs(tonumber(cz)! - pcz)
+					if dx > UNLOAD_DISTANCE or dz > UNLOAD_DISTANCE then
+						table.insert(toUnload, k)
+					end
 				end
 			end
+		end
 
-			-- Load missing chunks
-			for key, coord in requiredKeys do
-				if chunkStates[key] ~= "loaded" and not generating[key] then
-					generating[key] = true
-					task.spawn(function()
-						local ok, err = pcall(ChunkHandler.GenerateChunk,
-							coord.x, coord.z, seed)
-						if ok then
-							chunkStates[key] = "loaded"
-						else
-							warn("[StreamingManager] Load failed:", err)
-						end
-						generating[key] = nil
-					end)
-				end
-			end
-
-			-- Unload distant chunks (only ones not in requiredKeys)
-			for key, state in chunkStates do
-				if state == "loaded" and not requiredKeys[key] then
-					local parts = string.split(key, ",")
-					local cx = tonumber(parts[1]) or 0
-					local cz = tonumber(parts[2]) or 0
-					task.spawn(function()
-						unloadChunk(cx, cz)
-						chunkStates[key] = "unloaded"
-					end)
-				end
-			end
+		for _, k in ipairs(toUnload) do
+			loadedChunks[k] = nil
 		end
 	end)
-end
-
--- Mark a chunk as loaded (called by WorldGenerator for initial gen)
-function StreamingManager.MarkLoaded(cx: number, cz: number)
-	chunkStates[chunkKey(cx, cz)] = "loaded"
 end
 
 return StreamingManager

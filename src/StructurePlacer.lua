@@ -1,61 +1,47 @@
 --!strict
 -- ============================================================
--- MODULE: ReplicatedStorage/StructurePlacer  [v2 NEW]
--- Spawns biome-specific structures (campfires, igloos, ruins…)
--- at world positions. All clones from ReplicatedStorage/Structures/
--- All placements wrapped in pcall.
+-- MODULE: StructurePlacer  [v1.1 - fixed]
+-- Places pre-built structures (ruins, camps, temples) on land.
+-- Low-probability check to keep structures rare and meaningful.
 -- ============================================================
 
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Workspace         = game:GetService("Workspace")
+local WorldConfig = require(script.Parent.WorldConfig)
 
-local WorldConfig = require(ReplicatedStorage:WaitForChild("WorldConfig"))
-
--- Safe template retrieval
-local function getTemplate(name: string): Model?
-	local folder = ReplicatedStorage:FindFirstChild("Structures")
-	if not folder then return nil end
-	return folder:FindFirstChild(name) :: Model?
-end
-
--- Place model at position with random Y rotation
-local function placeModel(model: Model, position: Vector3)
-	if not model.PrimaryPart then
-		local part = model:FindFirstChildWhichIsA("BasePart")
-		if part then model.PrimaryPart = part
-		else model:Destroy(); return end
-	end
-	local rot = CFrame.Angles(0, math.rad(math.random(0, 359)), 0)
-	model:SetPrimaryPartCFrame(CFrame.new(position) * rot)
-	local container = Workspace:FindFirstChild("ProceduralAssets") or Workspace
-	model.Parent = container
-end
+local Workspace = game:GetService("Workspace")
 
 local StructurePlacer = {}
 
--- ----------------------------------------------------------------
--- TryPlace: rolls against StructureSpawnChance, then picks a
--- random structure from the biome's Structures list.
--- ----------------------------------------------------------------
-function StructurePlacer.TryPlace(
-	biome: { Name: string, Structures: { string } },
-	position: Vector3
-)
-	local cfg = WorldConfig.Settings
-	-- Early exit if biome has no structures or roll fails
-	if #biome.Structures == 0 then return end
-	if math.random() >= cfg.StructureSpawnChance then return end
+-- Structures available per biome
+local BIOME_STRUCTURES: { [string]: { string } } = {
+	Forest    = { "AbandonedCabin", "AncientRuins" },
+	Desert    = { "SandTemple", "BuriedCache" },
+	Snow      = { "IceFort", "FrozenSanctuary" },
+	Grassland = { "Farmstead", "RoadShrine" },
+	Jungle    = { "TempleRuins", "HiddenGrove" },
+	Tundra    = { "StoneCircle" },
+	Volcano   = { "FireShrine", "LavaCastle" },
+	Swamp     = { "WitchHut", "SunkenRuins" },
+}
 
-	local structName = biome.Structures[math.random(1, #biome.Structures)]
-	local ok, err = pcall(function()
-		local tmpl = getTemplate(structName)
-		if tmpl then
-			placeModel(tmpl:Clone(), position)
-		end
-	end)
-	if not ok then
-		warn("[StructurePlacer] Failed to place '" .. structName .. "':", err)
+local PLACEMENT_CHANCE = 0.003  -- 0.3% per voxel column on dry land
+
+function StructurePlacer.TryPlace(biome, position: Vector3)
+	if not biome then return end
+	if math.random() > PLACEMENT_CHANCE then return end
+
+	local structures = BIOME_STRUCTURES[biome.Name]
+	if not structures or #structures == 0 then return end
+
+	local pick = structures[math.random(#structures)]
+	local template = game:GetService("ServerStorage"):FindFirstChild(pick, true)
+	if not template then
+		warn("[StructurePlacer] Structure model not found:", pick)
+		return
 	end
+
+	local clone = template:Clone()
+	clone:PivotTo(CFrame.new(position) * CFrame.Angles(0, math.random(4) * math.pi * 0.5, 0))
+	clone.Parent = Workspace
 end
 
 return StructurePlacer
