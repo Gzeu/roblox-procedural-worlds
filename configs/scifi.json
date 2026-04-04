@@ -1,0 +1,13 @@
+{
+  "seed": 5005,
+  "worldSize": 256,
+  "maxHeight": 200,
+  "waterLevel": 5,
+  "noiseScale": 0.01,
+  "rivers": 0,
+  "riverDepth": 4,
+  "dungeonRooms": 12,
+  "structures": 8,
+  "propDensity": 0.02,
+  "biomes": ["Volcanic", "Desert"]
+}

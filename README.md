@@ -1,241 +1,185 @@
 # 🌍 Roblox Procedural Worlds
 
-[![Lua](https://img.shields.io/badge/Lua-5.1-blue?logo=lua)](https://www.lua.org)
-[![Python](https://img.shields.io/badge/Python-3.10+-green?logo=python)](https://python.org)
-[![Roblox](https://img.shields.io/badge/Roblox-Studio-red?logo=roblox)](https://www.roblox.com)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+> Generate fully procedural Roblox worlds from a single JSON config — rivers, dungeons, underground layers, large structures, and more.
 
-A fully-featured procedural open-world engine for Roblox Studio — 50+ Lua modules, a Python `.rbxlx` builder (v2.0), and a visual web configurator (v2.0) with presets and live terrain preview.
+[![CI](https://github.com/Gzeu/roblox-procedural-worlds/actions/workflows/ci.yml/badge.svg)](https://github.com/Gzeu/roblox-procedural-worlds/actions/workflows/ci.yml)
 
 ---
 
-## What's New in v2.0
+## ✨ What's New — v3.0
 
-### `build_world.py` v2.0
 | Feature | Details |
-|---------|---------|
-| 🌵 Desert cacti | Trunk + ball top + optional side arms |
-| 🌿 Swamp trees | Gnarled trunk, branch, moss canopy + hanging moss strip |
-| 🏔️ Snow cap | Auto white cap above 70% of `maxHeight` |
-| 🏖️ Beach strip | Sand colour at `waterLevel ± 3` |
-| 🌋 Volcanic rocks | Basalt boulders + Neon lava pool prop |
-| ❄️ Tundra boulders | Grey boulder + snow cap layer |
-| 🌊 Ocean rocks | Underwater rock formations |
-| 📊 Stats table | Biome chunk breakdown printed on every build |
-
-### `world-configurator.html` v2.0
-- **Preset bar** — one-click worlds: 🏝️ Survival Island, 🌋 Volcanic Wasteland, ❄️ Arctic Tundra
-- **Space key** = instant random seed (global keyboard shortcut)
-- **Export section** — ready-to-run Python command, Copy button
-- Unified toast notifications via `showNotif()`
-
----
-
-## Architecture
-
-```
-roblox-procedural-worlds/
-├── src/                        ← All Lua modules (ServerScriptService)
-│   ├── init.server.lua         ← Entry point: boots WorldGenerator
-│   ├── WorldGenerator.lua      ← Master orchestrator (v3.0)
-│   ├── WorldConfig.lua         ← All tuneable constants
-│   │
-│   ├── ── Terrain ──
-│   ├── ChunkHandler.lua        ← Voxel chunk gen + unloading (v3.0)
-│   ├── BiomeResolver.lua       ← temp/moisture → biome lookup
-│   ├── OreGenerator.lua        ← Underground ore veins
-│   ├── RiverCarver.lua         ← River path carving
-│   ├── DungeonGenerator.lua    ← Dungeon rooms
-│   ├── VillageGenerator.lua    ← Village placement
-│   ├── LODManager.lua          ← Level-of-detail registration
-│   ├── StreamingManager.lua    ← Per-player chunk streaming
-│   ├── ChunkPredictor.lua      ← Predictive pre-load
-│   ├── AssetPlacer.lua         ← Tree/rock/bush surface props
-│   ├── StructurePlacer.lua     ← Large structure placement
-│   │
-│   ├── ── AI ──
-│   ├── MobAI.lua               ← FSM: Idle/Patrol/Alert/Chase/Strafe/Attack/Flee (v4.0)
-│   ├── AIConfig.lua            ← Per-mob type configs
-│   ├── AIDirector.lua          ← Spawn pacing + difficulty wave
-│   ├── AIGroupBehavior.lua     ← Pack tactics
-│   ├── AIMemory.lua            ← Per-mob event memory
-│   ├── AINavigator.lua         ← PathfindingService wrapper
-│   ├── BehaviorTree.lua        ← Composable behavior trees
-│   ├── MobSpawner.lua          ← Spawn pool management
-│   │
-│   ├── ── Systems ──
-│   ├── CombatSystem.lua        ← Hit detection, damage numbers
-│   ├── SkillSystem.lua         ← Player skills + cooldowns
-│   ├── CraftingSystem.lua      ← Crafting recipes
-│   ├── Inventory.lua           ← Item storage
-│   ├── QuestSystem.lua         ← Quest state machine
-│   ├── ProceduralQuestGen.lua  ← Random quest generation
-│   ├── ClanSystem.lua          ← Clan creation/management
-│   ├── FactionSystem.lua       ← World factions + rep
-│   ├── BaseBuilding.lua        ← Placeable structures
-│   ├── EconomyManager.lua      ← Gold/trade
-│   ├── DayNightCycle.lua       ← Lighting cycle
-│   ├── WeatherManager.lua      ← Weather state machine
-│   ├── AwakenSystem.lua        ← Power awakening
-│   ├── FightingStyles.lua      ← Martial arts styles
-│   ├── RunModifiers.lua        ← Run-specific modifiers
-│   ├── LootTable.lua           ← Weighted loot rolls
-│   ├── BossEncounter.lua       ← Boss spawn + phases
-│   │
-│   ├── ── Data / Persistence ──
-│   ├── DataStoreManager.lua    ← DataStore v2 wrapper
-│   ├── PlayerPersistence.lua   ← Auto-save player data
-│   ├── SeedPersistence.lua     ← Save/load world seed
-│   ├── SeedShare.lua           ← Share seed via chat/UI
-│   │
-│   ├── ── UI (Client) ──
-│   ├── HUD.client.lua          ← HP/stamina/biome HUD
-│   ├── InventoryUI.client.lua  ← Inventory grid UI
-│   ├── MinimapUI.client.lua    ← Live minimap
-│   ├── QuestTracker.client.lua ← Quest log sidebar
-│   ├── DialogueUI.client.lua   ← NPC dialogue bubbles
-│   ├── AmbienceClient.client.lua ← Audio ambience
-│   ├── WeatherClient.lua       ← Client weather FX
-│   │
-│   └── ── Infrastructure ──
-│       ├── EventBus.lua        ← Pub/sub event system
-│       ├── ObjectPool.lua      ← Instance recycling
-│       ├── NotificationBridge.lua ← Server→client toasts
-│       ├── AdminPanel.lua      ← In-game admin commands
-│       ├── AntiExploit.lua     ← Sanity checks
-│       ├── AnimationManager.lua ← Animation controller
-│       ├── ParticleEffects.lua ← VFX helpers
-│       ├── SoundManager.lua    ← Audio controller
-│       └── NPCDialogue.lua     ← NPC branching dialogue
-│
-├── tools/
-│   ├── build_world.py          ← Generate .rbxlx from JSON config (v2.0)
-│   ├── world-configurator.html ← Visual configurator + live preview (v2.0)
-│   └── README_BUILDER.md       ← Builder documentation
-│
-├── configs/
-│   └── default_world.json      ← Example world config
-│
-└── .github/
-    └── workflows/              ← CI placeholder
-```
+|---|---|
+| **River carving** | Hydraulic erosion algorithm traces rivers from peaks to water level |
+| **Dungeon rooms** | Procedural rooms + corridors generated directly in `.rbxlx` as `Model "Dungeons"` |
+| **Underground layers** | Bedrock (y<10) · Stone (y<60) · Dirt (y<surface−3) · Surface cap |
+| **Large structures** | Towers & ruins placed semi-randomly per seed |
+| **`--watch` flag** | Auto-rebuilds on every JSON save (`Ctrl+C` to stop) |
+| **`--format rojo`** | Exports `src/` folder compatible with Rojo / VS Code plugin |
+| **3D Isometric preview** | Three.js inline preview with drag-to-rotate & scroll-to-zoom |
+| **URL Share** | Config encoded as Base64 in URL hash — shareable one-click link |
+| **Undo / Redo** | Ctrl+Z / Ctrl+Y — up to 20 states |
+| **Custom presets** | Save & load your own presets in `localStorage` |
+| **BiomeBlending.lua** | Gradient-noise soft transitions between biomes |
+| **ChunkHandler.lua v4** | Async chunk loading via `task.defer` |
+| **MobAI.lua v5** | Vision cone 90°, hearing radius, memory decay |
+| **CI workflow** | JSON schema validation + smoke build on every PR |
+| **Configs gallery** | 5 example worlds: medieval, scifi, horror, jungle, arctic |
 
 ---
 
-## Quick Start
-
-### Option A — Python Builder (v2.0)
+## 🚀 Quick Start
 
 ```bash
 # 1. Clone
 git clone https://github.com/Gzeu/roblox-procedural-worlds
 cd roblox-procedural-worlds
 
-# 2. Open the visual configurator in browser
-open tools/world-configurator.html   # macOS
-start tools/world-configurator.html  # Windows
+# 2. Edit config
+cp configs/medieval.json world_config.json
 
-# 3. Pick a preset (or configure manually), download config → world_config.json
-# 4. Build .rbxlx
-python tools/build_world.py configs/default_world.json MyWorld.rbxlx
+# 3. Build
+python tools/build_world.py world_config.json
 
-# 5. Open in Roblox Studio
-# File → Open from File → MyWorld.rbxlx
+# 4. Open output/world.rbxlx in Roblox Studio
 ```
 
-> **Tip:** Press `Space` in the configurator for an instant random seed. The **Export** section shows the exact command to copy-paste.
-
-### Option B — Rojo (recommended for dev)
-
+### Watch mode (auto-rebuild)
 ```bash
-npm install -g rojo
-rojo serve default.project.json
-# Then in Roblox Studio install Rojo plugin and connect
+python tools/build_world.py world_config.json --watch
+```
+Every time you save `world_config.json`, the world is rebuilt automatically.
+
+### Rojo export
+```bash
+python tools/build_world.py world_config.json --format rojo
+# → src/heightmap.json  ready for Rojo plugin sync
 ```
 
 ---
 
-## Built-in Presets
+## 🗺 Configs Gallery
 
-| Preset | Seed | Biomes | Difficulty |
-|--------|------|--------|------------|
-| 🏝️ Survival Island | 777000 | Forest, Desert, Swamp | Normal |
-| 🌋 Volcanic Wasteland | 666999 | Volcanic, Desert | Hard |
-| ❄️ Arctic Tundra | 112233 | Tundra, Ocean | Hard |
-
----
-
-## Key Modules
-
-| Module | Version | Highlights |
-|--------|---------|------------|
-| `WorldGenerator` | v3.0 | Chunk unloading, Regenerate(), metrics log |
-| `MobAI` | v4.0 | STRAFE state, difficulty scaling, LKP, HP regen |
-| `ChunkHandler` | v3.0 | Biome borders, snow cap, beach, UnloadChunk |
-| `BiomeResolver` | — | Whittaker diagram (temp × moisture) |
-| `AIDirector` | — | Difficulty waves, spawn pacing |
-| `DataStoreManager` | — | DataStore v2, auto-retry, compression |
+| File | Theme | Biomes | Rivers | Dungeons | Structures |
+|---|---|---|---|---|---|
+| `configs/medieval.json` | 🏰 Medieval Kingdom | Forest · Swamp · Desert | 5 | 8 | 10 |
+| `configs/scifi.json` | 🚀 Sci-Fi Wasteland | Volcanic · Desert | 0 | 12 | 8 |
+| `configs/horror.json` | 💀 Horror Moors | Swamp · Forest | 4 | 10 | 7 |
+| `configs/jungle.json` | 🌿 Jungle Paradise | Forest · Swamp · Ocean | 7 | 6 | 5 |
+| `configs/arctic.json` | ❄ Arctic Tundra | Tundra · Ocean | 2 | 5 | 4 |
 
 ---
 
-## World Config Fields
+## 🌋 Biome Props
+
+| Biome | Props |
+|---|---|
+| Desert | Cactuși |
+| Swamp | Swamp Trees, Moss |
+| Volcanic | Boulders, Lava Pits (Neon) |
+| Tundra | Ice Boulders, Snow Mounds |
+| Ocean | Ocean Rocks |
+| Forest | Trees |
+
+---
+
+## 🏗 Underground Layers
+
+| Layer | Y Range | Material |
+|---|---|---|
+| Bedrock | 0 – 10 | Slate |
+| Stone | 10 – 60 | SmoothPlastic |
+| Dirt | 60 – surface−3 | Grass |
+| Surface cap | surface | Biome color |
+| Snow cap | > 70% maxHeight | White |
+
+---
+
+## 🗡 Dungeon Generation
+
+Dungeons are embedded as a `Model` named **Dungeons** in the `.rbxlx`.
+- Rooms: 10–24 cells wide, 6–10 cells tall, placed at y=15–45
+- Corridors: L-shaped hallways connecting consecutive rooms
+- Count: controlled by `dungeonRooms` in config
+
+---
+
+## 🏰 Large Structures
+
+- **Towers**: 3-tier Part stack (base → mid → top + flag)
+- **Ruins**: 3–7 randomly-sized pillars per ruin
+- Count: `structures` in config
+- Placement: deterministic from `seed`
+
+---
+
+## 🌊 Rivers
+
+Hydraulic erosion algorithm:
+1. Starts near terrain peaks
+2. Walks downhill each step (steepest-descent)
+3. Carves width `riverWidth` and depth `riverDepth` into heightmap
+4. Stops when reaching `waterLevel`
+
+Config keys: `rivers`, `riverDepth`, `riverWidth`
+
+---
+
+## 🤖 Lua Modules
+
+| Module | Version | Purpose |
+|---|---|---|
+| `src/BiomeBlending.lua` | v3.0 | Gradient-noise soft biome transitions |
+| `src/ChunkHandler.lua` | v4.0 | Async chunk load/unload with `task.defer` |
+| `src/MobAI.lua` | v5.0 | Vision cone · Hearing radius · Memory decay |
+
+---
+
+## 🔧 world_config.json Reference
 
 ```json
 {
-  "worldName": "My World",
-  "seed": 12345,
-  "chunkSize": 64,
-  "renderDistance": 3,
+  "seed": 42,
+  "worldSize": 256,
   "maxHeight": 120,
   "waterLevel": 20,
-  "noiseScale": 0.05,
-  "biomes": ["Forest", "Desert", "Tundra", "Swamp", "Volcanic", "Ocean"],
-  "mobs": {
-    "density": 5,
-    "difficulty": "normal",
-    "bosses": true,
-    "groupAI": true
-  },
-  "structures": {
-    "villages": true,
-    "dungeons": true,
-    "rivers": true,
-    "ores": true
-  },
-  "systems": {
-    "dayNightCycle": true,
-    "weather": true,
-    "baseBuilding": false,
-    "clans": false,
-    "dayLengthMinutes": 20
-  }
+  "noiseScale": 0.008,
+  "rivers": 4,
+  "riverDepth": 6,
+  "riverWidth": 3,
+  "dungeonRooms": 6,
+  "structures": 5,
+  "propDensity": 0.04,
+  "biomes": ["Forest", "Desert", "Swamp", "Volcanic", "Tundra", "Ocean"]
 }
 ```
 
-### Biome-specific props (v2.0)
+---
 
-| Biome | Props generated |
-|-------|----------------|
-| Forest | Trees (trunk + ball canopy), snow cap above 70% height |
-| Desert | Cacti (trunk + ball + optional arms), beach sand strip |
-| Swamp | Gnarled trees + hanging moss |
-| Volcanic | Basalt boulders + Neon lava pools |
-| Tundra | Grey boulders + snow cap |
-| Ocean | Underwater rock formations |
+## 📦 Project Structure
+
+```
+roblox-procedural-worlds/
+├── tools/
+│   ├── build_world.py          # v3.0 — main builder
+│   └── world-configurator.html # v3.0 — GUI with 3D preview
+├── src/
+│   ├── BiomeBlending.lua       # v3.0
+│   ├── ChunkHandler.lua        # v4.0
+│   └── MobAI.lua               # v5.0
+├── configs/
+│   ├── medieval.json
+│   ├── scifi.json
+│   ├── horror.json
+│   ├── jungle.json
+│   └── arctic.json
+├── .github/workflows/
+│   └── ci.yml                  # JSON validate + smoke build
+└── README.md
+```
 
 ---
 
-## Contributing
+## 📄 License
 
-1. Fork the repo
-2. Create a feature branch: `git checkout -b feat/your-feature`
-3. Commit your changes with clear messages
-4. Open a Pull Request against `main`
-
-Please follow existing module patterns (return a table, use EventBus for cross-module communication, avoid globals).
-
----
-
-## License
-
-MIT © Gzeu
+MIT — see [LICENSE](LICENSE)

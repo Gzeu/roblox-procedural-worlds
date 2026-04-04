@@ -1,389 +1,465 @@
 #!/usr/bin/env python3
 """
-build_world.py v2.0 -- Generate .rbxlx from world_config.json
-Usage: python build_world.py world_config.json [output.rbxlx]
-
-New in v2.0:
-  - Desert: cactus props (trunk + ball top + optional arms)
-  - Swamp: gnarled trees with moss canopy + hanging moss
-  - Mountain detection: white snow cap above 70% max height
-  - Beach: sand strip at waterLevel +/- 3
-  - Volcanic: lava pool props via Neon material
-  - Ocean: underwater rock formations
-  - Improved prop density variance per biome
-  - Generation stats table printed on build
+build_world.py  v3.0
+Generates a Roblox .rbxlx world from world_config.json
+New in v3.0: river carving, dungeon rooms, multi-layer underground,
+             large structures (towers/ruins), --watch flag, --format rojo
 """
 
-import json
-import sys
-import math
-import random
-from pathlib import Path
-from datetime import datetime
+import json, math, random, argparse, os, sys, time, shutil, hashlib
+from xml.etree import ElementTree as ET
+from xml.dom import minidom
 
-def xml_escape(s):
-    return str(s).replace('&','&amp;').replace('<','&lt;').replace('>','&gt;').replace('"','&quot;')
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+parser = argparse.ArgumentParser(description="Procedural World Builder v3.0")
+parser.add_argument("config", nargs="?", default="world_config.json")
+parser.add_argument("--output", "-o", default="output/world.rbxlx")
+parser.add_argument("--watch", action="store_true", help="Rebuild on config save")
+parser.add_argument("--format", choices=["rbxlx", "rojo"], default="rbxlx")
+args = parser.parse_args()
 
-def noise(x, y, seed=0):
-    n = math.sin(x * 127.1 + y * 311.7 + seed) * 43758.5453
-    return n - math.floor(n)
+# ---------------------------------------------------------------------------
+# Noise helpers
+# ---------------------------------------------------------------------------
+def fade(t): return t * t * t * (t * (t * 6 - 15) + 10)
+def lerp(a, b, t): return a + t * (b - a)
 
-def smooth_noise(x, y, seed=0):
-    ix, iy = int(math.floor(x)), int(math.floor(y))
-    fx, fy = x - ix, y - iy
-    ux = fx * fx * (3 - 2 * fx)
-    uy = fy * fy * (3 - 2 * fy)
-    a = noise(ix,     iy,     seed)
-    b = noise(ix + 1, iy,     seed)
-    c = noise(ix,     iy + 1, seed)
-    d = noise(ix + 1, iy + 1, seed)
-    return a*(1-ux)*(1-uy) + b*ux*(1-uy) + c*(1-ux)*uy + d*ux*uy
+_perm = list(range(256))
+random.shuffle(_perm)
+_perm += _perm
 
-def fbm(x, y, seed=0, octaves=5):
-    v, amp, freq, mx = 0, 0.5, 1, 0
+def grad(h, x, y):
+    h &= 3
+    if h == 0: return  x + y
+    if h == 1: return -x + y
+    if h == 2: return  x - y
+    return -x - y
+
+def perlin(x, y):
+    xi, yi = int(math.floor(x)) & 255, int(math.floor(y)) & 255
+    xf, yf = x - math.floor(x), y - math.floor(y)
+    u, v   = fade(xf), fade(yf)
+    aa = _perm[_perm[xi]   + yi]
+    ab = _perm[_perm[xi]   + yi+1]
+    ba = _perm[_perm[xi+1] + yi]
+    bb = _perm[_perm[xi+1] + yi+1]
+    return lerp(lerp(grad(aa,xf,yf),   grad(ba,xf-1,yf),   u),
+                lerp(grad(ab,xf,yf-1), grad(bb,xf-1,yf-1), u), v)
+
+def fbm(x, y, octaves=6, lacunarity=2.0, gain=0.5):
+    val, amp, freq = 0.0, 0.5, 1.0
     for _ in range(octaves):
-        v  += smooth_noise(x * freq, y * freq, seed) * amp
-        mx += amp
-        amp  *= 0.5
-        freq *= 2.0
-    return v / mx
+        val  += amp * perlin(x * freq, y * freq)
+        amp  *= gain
+        freq *= lacunarity
+    return val
 
+# ---------------------------------------------------------------------------
+# Load config
+# ---------------------------------------------------------------------------
+def load_config(path):
+    with open(path) as f:
+        return json.load(f)
+
+# ---------------------------------------------------------------------------
+# Heightmap generation
+# ---------------------------------------------------------------------------
+def generate_heightmap(cfg, rng):
+    W  = cfg.get("worldSize", 256)
+    mH = cfg.get("maxHeight", 120)
+    sc = cfg.get("noiseScale", 0.008)
+    ox = rng.uniform(0, 1000)
+    oy = rng.uniform(0, 1000)
+    hmap = [[0.0]*W for _ in range(W)]
+    for z in range(W):
+        for x in range(W):
+            n = fbm((x + ox)*sc, (z + oy)*sc)
+            hmap[z][x] = max(0.0, min(1.0, (n + 1.0) / 2.0)) * mH
+    return hmap
+
+# ---------------------------------------------------------------------------
+# Biome assignment
+# ---------------------------------------------------------------------------
+def get_biome(h, cfg):
+    mH  = cfg.get("maxHeight", 120)
+    wL  = cfg.get("waterLevel", 20)
+    frac = h / mH
+    if h <= wL:          return "Ocean"
+    if frac < 0.15:      return "Beach"
+    biomes = cfg.get("biomes", ["Forest"])
+    if "Volcanic" in biomes and frac > 0.85: return "Volcanic"
+    if "Tundra"   in biomes and frac > 0.75: return "Tundra"
+    if "Swamp"    in biomes and frac < 0.25: return "Swamp"
+    if "Desert"   in biomes and frac < 0.35: return "Desert"
+    return biomes[0] if biomes else "Forest"
+
+# ---------------------------------------------------------------------------
+# RIVER CARVING  (hydraulic erosion — simplified steepest-descent)
+# ---------------------------------------------------------------------------
+def carve_rivers(hmap, cfg, rng):
+    W        = len(hmap)
+    wL       = cfg.get("waterLevel", 20)
+    n_rivers = cfg.get("rivers", 4)
+    depth    = cfg.get("riverDepth", 6)
+    width    = cfg.get("riverWidth", 3)
+
+    for _ in range(n_rivers):
+        # Start near peaks
+        sx = rng.randint(W//4, 3*W//4)
+        sz = rng.randint(W//4, 3*W//4)
+        # Walk downhill
+        for _step in range(W * 2):
+            # Carve current cell + neighbours within width
+            for dz in range(-width, width+1):
+                for dx in range(-width, width+1):
+                    nx_, nz_ = sx+dx, sz+dz
+                    if 0 <= nx_ < W and 0 <= nz_ < W:
+                        hmap[nz_][nx_] = max(hmap[nz_][nx_] - depth * max(0, 1 - (abs(dx)+abs(dz))/(width+1)), wL - 1)
+            # Move to lowest neighbour
+            best_h = hmap[sz][sx]
+            best_pos = None
+            for dz2, dx2 in [(-1,0),(1,0),(0,-1),(0,1)]:
+                nz2, nx2 = sz+dz2, sx+dx2
+                if 0 <= nx2 < W and 0 <= nz2 < W and hmap[nz2][nx2] < best_h:
+                    best_h, best_pos = hmap[nz2][nx2], (nx2, nz2)
+            if best_pos is None:
+                break
+            sx, sz = best_pos
+            if hmap[sz][sx] <= wL:
+                break
+    return hmap
+
+# ---------------------------------------------------------------------------
+# RBXLX helpers
+# ---------------------------------------------------------------------------
+NEXT_ID = [1]
+def new_id():
+    i = NEXT_ID[0]; NEXT_ID[0] += 1; return i
+
+def make_part(parent, name, cx, cy, cz, sx, sy, sz,
+              color="163 162 165", material="SmoothPlastic",
+              anchored=True, can_collide=True, transparency=0):
+    part = ET.SubElement(parent, "Part", ClassName="Part", referent=f"RBX{new_id()}")
+    def prop(tag, typ, pname, val):
+        p = ET.SubElement(part, "Properties")
+        e = ET.SubElement(p, typ, name=pname)
+        e.text = str(val)
+        return e
+    # Flattened properties block
+    props = ET.SubElement(part, "Properties")
+    def pp(typ, pname, val):
+        e = ET.SubElement(props, typ, name=pname)
+        e.text = str(val)
+    pp("string",  "Name",         name)
+    pp("token",   "Shape",        "0")
+    pp("bool",    "Anchored",     str(anchored).lower())
+    pp("bool",    "CanCollide",   str(can_collide).lower())
+    pp("float",   "Transparency", str(transparency))
+    pp("token",   "Material",     material)
+    size_e = ET.SubElement(props, "Vector3", name="Size")
+    size_e.text = f"{sx} {sy} {sz}"
+    cf = ET.SubElement(props, "CoordinateFrame", name="CFrame")
+    ET.SubElement(cf, "X").text = str(cx)
+    ET.SubElement(cf, "Y").text = str(cy)
+    ET.SubElement(cf, "Z").text = str(cz)
+    for tag in ["R00","R01","R02","R10","R11","R12","R20","R21","R22"]:
+        ET.SubElement(cf, tag).text = "1" if tag in ("R00","R11","R22") else "0"
+    bc = ET.SubElement(props, "Color3uint8", name="BrickColor")
+    bc.text = color
+    return part
+
+def make_model(parent, name):
+    m = ET.SubElement(parent, "Model", ClassName="Model", referent=f"RBX{new_id()}")
+    props = ET.SubElement(m, "Properties")
+    n = ET.SubElement(props, "string", name="Name")
+    n.text = name
+    return m
+
+# ---------------------------------------------------------------------------
+# TERRAIN PARTS  (column-based with underground layers)
+# ---------------------------------------------------------------------------
 BIOME_COLORS = {
-    "Forest":   {"r": 106, "g": 127, "b": 63},
-    "Desert":   {"r": 196, "g": 165, "b": 90},
-    "Tundra":   {"r": 139, "g": 184, "b": 212},
-    "Swamp":    {"r": 61,  "g": 82,  "b": 46},
-    "Volcanic": {"r": 120, "g": 42,  "b": 21},
-    "Ocean":    {"r": 10,  "g": 50,  "b": 100},
-}
-BIOME_WATER_COLOR = {"r": 28,  "g": 86,  "b": 140}
-BIOME_LAVA_COLOR  = {"r": 220, "g": 80,  "b": 10}
-BIOME_SAND_COLOR  = {"r": 210, "g": 190, "b": 120}
-BIOME_SNOW_COLOR  = {"r": 230, "g": 240, "b": 255}
-
-BIOME_HEIGHT_SCALE = {
-    "Forest": 1.0, "Desert": 0.7, "Tundra": 0.8,
-    "Swamp": 0.4, "Volcanic": 1.4, "Ocean": 0.2,
+    "Ocean":    "23 113 184",
+    "Beach":    "215 197 154",
+    "Forest":   "106 127 63",
+    "Swamp":    "75 100 55",
+    "Desert":   "218 205 158",
+    "Volcanic": "105 64 40",
+    "Tundra":   "195 205 215",
 }
 
-def make_cframe(x, y, z):
-    return (
-        f'<CoordinateFrame name="CFrame">'
-        f'<X>{x:.3f}</X><Y>{y:.3f}</Y><Z>{z:.3f}</Z>'
-        f'<R00>1</R00><R01>0</R01><R02>0</R02>'
-        f'<R10>0</R10><R11>1</R11><R12>0</R12>'
-        f'<R20>0</R20><R21>0</R21><R22>1</R22>'
-        f'</CoordinateFrame>'
-    )
+def emit_terrain(ws, hmap, cfg, rng):
+    W  = len(hmap)
+    mH = cfg.get("maxHeight", 120)
+    wL = cfg.get("waterLevel", 20)
+    CELL = 4  # studs per cell
+    terrain_model = make_model(ws, "Terrain")
 
-def make_part(name, x, y, z, sx, sy, sz, r, g, b, transp=0, shape="Block", material="SmoothPlastic"):
-    rf, gf, bf = r/255, g/255, b/255
-    return (
-        f'<Item class="Part"><Properties>'
-        f'<string name="Name">{xml_escape(name)}</string>'
-        f'<bool name="Anchored">true</bool>'
-        f'<bool name="CanCollide">true</bool>'
-        f'<float name="Transparency">{transp}</float>'
-        f'{make_cframe(x, y, z)}'
-        f'<Vector3 name="Size"><X>{sx:.2f}</X><Y>{sy:.2f}</Y><Z>{sz:.2f}</Z></Vector3>'
-        f'<Color3 name="Color"><R>{rf:.4f}</R><G>{gf:.4f}</G><B>{bf:.4f}</B></Color3>'
-        f'<string name="Shape">{shape}</string>'
-        f'<string name="Material">{material}</string>'
-        f'</Properties></Item>'
-    )
+    for z in range(0, W, 2):   # stride 2 to keep part count sane
+        for x in range(0, W, 2):
+            h  = hmap[z][x]
+            ih = max(1, int(h))
+            bm = get_biome(h, cfg)
+            col = BIOME_COLORS.get(bm, "163 162 165")
+            cx_ = (x - W/2) * CELL
+            cz_ = (z - W/2) * CELL
 
-def make_tree(prefix, tx, base_y, tz, rng):
-    th = rng.uniform(8, 16)
-    cr = rng.uniform(4, 8)
-    return [
-        make_part(f"{prefix}_trunk", tx, base_y + th/2, tz, 2, th, 2, 101, 79, 37),
-        make_part(f"{prefix}_can",   tx, base_y + th + cr*0.6, tz, cr*2, cr*1.2, cr*2, 62, 142, 65, shape="Ball"),
-    ]
+            # === Multi-layer underground ===
+            # Bedrock  y < 10
+            make_part(terrain_model, "Bedrock", cx_, 5, cz_, CELL*2, 10, CELL*2,
+                      color="105 102 100", material="Slate")
+            # Stone  10 < y < 60
+            stone_top = min(60, ih - 3)
+            if stone_top > 10:
+                make_part(terrain_model, "Stone", cx_, (10+stone_top)//2, cz_,
+                          CELL*2, stone_top-10, CELL*2,
+                          color="130 130 130", material="SmoothPlastic")
+            # Dirt  60 < y < surface-3
+            dirt_top = max(60, ih - 3)
+            if dirt_top > 60:
+                make_part(terrain_model, "Dirt", cx_, (60+dirt_top)//2, cz_,
+                          CELL*2, dirt_top-60, CELL*2,
+                          color="132 94 56", material="Grass")
+            # Surface cap
+            make_part(terrain_model, bm, cx_, ih, cz_, CELL*2, 2, CELL*2,
+                      color=col, material="Grass")
+            # Snow cap above 70% maxHeight
+            if h > mH * 0.70 and bm != "Ocean":
+                make_part(terrain_model, "SnowCap", cx_, ih+1, cz_, CELL*2, 1, CELL*2,
+                          color="248 248 248", material="SmoothPlastic")
+            # Water fill
+            if h < wL:
+                make_part(terrain_model, "Water", cx_, wL//2, cz_, CELL*2, wL, CELL*2,
+                          color="23 113 184", material="SmoothPlastic", transparency=0.5)
+    return terrain_model
 
-def make_swamp_tree(prefix, tx, base_y, tz, rng):
-    th = rng.uniform(5, 12)
-    return [
-        make_part(f"{prefix}_st",   tx, base_y + th/2, tz, 2.5, th, 2.5, 55, 35, 18),
-        make_part(f"{prefix}_br",   tx + rng.uniform(2,4), base_y + th*0.6, tz + rng.uniform(-2,2), 1.5, th*0.5, 1.5, 50, 30, 15),
-        make_part(f"{prefix}_can",  tx, base_y + th + 2.5, tz, 9, 4, 9, 38, 72, 32, shape="Ball"),
-        make_part(f"{prefix}_moss", tx + rng.uniform(-2,2), base_y + th - 1, tz + rng.uniform(-2,2), 1, rng.uniform(3,6), 1, 30, 60, 25, transp=0.25),
-    ]
+# ---------------------------------------------------------------------------
+# BIOME PROPS
+# ---------------------------------------------------------------------------
+def emit_props(ws, hmap, cfg, rng):
+    W  = len(hmap)
+    wL = cfg.get("waterLevel", 20)
+    CELL = 4
+    props_model = make_model(ws, "Props")
 
-def make_cactus(prefix, tx, base_y, tz, rng):
-    th = rng.uniform(6, 14)
-    parts = [
-        make_part(f"{prefix}_body", tx, base_y + th/2,     tz, 3, th, 3, 62, 120, 55),
-        make_part(f"{prefix}_top",  tx, base_y + th + 1.5, tz, 3, 3, 3, 55, 110, 48, shape="Ball"),
-    ]
-    if rng.random() > 0.4:
-        arm_h   = rng.uniform(th*0.4, th*0.7)
-        arm_len = rng.uniform(3, 5)
-        side    = 1 if rng.random() > 0.5 else -1
-        parts += [
-            make_part(f"{prefix}_armH", tx + side*arm_len/2, base_y + arm_h,     tz, arm_len, 2, 2, 62, 120, 55),
-            make_part(f"{prefix}_armV", tx + side*arm_len,   base_y + arm_h + 2, tz, 2, 4, 2, 62, 120, 55),
-        ]
-    return parts
+    PROP_DEFS = {
+        "Desert":   [("Cactus",   4, 8,  4, "106 127 63")],
+        "Swamp":    [("SwampTree",3, 14, 3, "75 100 55"), ("Moss", 4, 1, 4, "90 110 50")],
+        "Volcanic": [("Boulder",  5, 5,  5, "105 64 40"), ("LavaPit", 5, 1, 5, "255 100 0")],
+        "Tundra":   [("IceBoulder",4,3, 4, "195 205 215"), ("SnowMound",5,2,5,"248 248 248")],
+        "Ocean":    [("OceanRock", 3, 6, 3, "130 120 110")],
+        "Forest":   [("Tree",      4, 16, 4, "80 109 84")],
+    }
 
-def make_volcanic_rock(prefix, rx, base_y, rz, rng):
-    rs = rng.uniform(4, 10)
-    lc = BIOME_LAVA_COLOR
-    parts = [make_part(f"{prefix}_r", rx, base_y + rs/2, rz, rs, rs*0.7, rs, 60, 30, 20, shape="Ball")]
-    if rng.random() > 0.55:
-        parts.append(make_part(
-            f"{prefix}_lava",
-            rx + rng.uniform(-3,3), base_y + 0.5, rz + rng.uniform(-3,3),
-            rng.uniform(4,8), 1, rng.uniform(4,8),
-            lc["r"], lc["g"], lc["b"], transp=0.1, material="Neon"
-        ))
-    return parts
+    density = cfg.get("propDensity", 0.04)
+    for z in range(0, W, 1):
+        for x in range(0, W, 1):
+            if rng.random() > density: continue
+            h  = hmap[z][x]
+            bm = get_biome(h, cfg)
+            defs = PROP_DEFS.get(bm, [])
+            if not defs: continue
+            pname, sw, sh, sd, col = rng.choice(defs)
+            cx_ = (x - W/2) * CELL + rng.uniform(-1,1)
+            cz_ = (z - W/2) * CELL + rng.uniform(-1,1)
+            cy_ = max(1, int(h)) + sh//2 + 1
+            mat = "Neon" if "Lava" in pname else "SmoothPlastic"
+            make_part(props_model, pname, cx_, cy_, cz_, sw, sh, sd, color=col, material=mat)
+    return props_model
 
-def make_tundra_boulder(prefix, rx, base_y, rz, rng):
-    rs = rng.uniform(3, 7)
-    return [
-        make_part(f"{prefix}_b",  rx, base_y + rs/2,        rz, rs,     rs,     rs,     105, 120, 130, shape="Ball"),
-        make_part(f"{prefix}_sn", rx, base_y + rs + rs*0.3, rz, rs*0.7, rs*0.3, rs*0.7, 225, 235, 250),
-    ]
+# ---------------------------------------------------------------------------
+# DUNGEON ROOMS
+# ---------------------------------------------------------------------------
+def emit_dungeons(ws, cfg, rng):
+    n_rooms = cfg.get("dungeonRooms", 6)
+    W  = cfg.get("worldSize", 256)
+    CELL = 4
+    dung_model = make_model(ws, "Dungeons")
 
-def make_ocean_rock(prefix, rx, base_y, rz, rng):
-    rs = rng.uniform(3, 8)
-    return [make_part(f"{prefix}_f", rx, base_y + rs/2, rz, rs, rs*1.5, rs, 30, 50, 80, shape="Ball")]
+    rooms = []
+    attempts = 0
+    while len(rooms) < n_rooms and attempts < 300:
+        attempts += 1
+        rw = rng.randint(10, 24)
+        rl = rng.randint(10, 24)
+        rh = rng.randint(6, 10)
+        rx = rng.randint(-W//2, W//2) * CELL
+        rz = rng.randint(-W//2, W//2) * CELL
+        ry = rng.randint(15, 45)  # underground
+        rooms.append((rx, ry, rz, rw*CELL, rh, rl*CELL))
 
-def generate_terrain(cfg, rng):
-    cs     = cfg["chunkSize"]
-    rd     = cfg["renderDistance"]
-    mh     = cfg["maxHeight"]
-    wl     = cfg["waterLevel"]
-    ns     = cfg["noiseScale"]
-    seed   = cfg["seed"]
-    biomes = cfg["biomes"] or ["Forest"]
-    parts  = []
+    # Emit room walls (hollow box — just 4 walls + floor + ceiling)
+    for (rx, ry, rz, rw, rh, rl) in rooms:
+        # floor
+        make_part(dung_model, "DungFloor", rx, ry,      rz,  rw, 1, rl, color="105 102 100", material="Slate")
+        # ceiling
+        make_part(dung_model, "DungCeil",  rx, ry+rh,   rz,  rw, 1, rl, color="105 102 100", material="Slate")
+        # north/south walls
+        make_part(dung_model, "DungWallN", rx, ry+rh//2, rz-rl//2, rw, rh, 1, color="130 130 130")
+        make_part(dung_model, "DungWallS", rx, ry+rh//2, rz+rl//2, rw, rh, 1, color="130 130 130")
+        # east/west walls
+        make_part(dung_model, "DungWallE", rx+rw//2, ry+rh//2, rz, 1, rh, rl, color="130 130 130")
+        make_part(dung_model, "DungWallW", rx-rw//2, ry+rh//2, rz, 1, rh, rl, color="130 130 130")
 
-    snow_threshold = mh * 0.70
-    beach_lo, beach_hi = wl - 2, wl + 3
-    stats = {b: 0 for b in biomes}
-    stats.update({"water": 0, "beach": 0, "snow": 0})
+    # Corridors between consecutive rooms
+    for i in range(len(rooms)-1):
+        ax, ay, az = rooms[i][0],  rooms[i][1]+2,  rooms[i][2]
+        bx, by, bz = rooms[i+1][0], rooms[i+1][1]+2, rooms[i+1][2]
+        midx, midz = (ax+bx)//2, (az+bz)//2
+        # Horizontal corridor
+        dx = abs(bx - ax)
+        dz_ = abs(bz - az)
+        if dx > 0:
+            make_part(dung_model, "Corridor", (ax+bx)//2, ay, az, dx, 4, 4, color="105 102 100", material="Slate")
+        if dz_ > 0:
+            make_part(dung_model, "Corridor", bx, by, (az+bz)//2, 4, 4, dz_, color="105 102 100", material="Slate")
+    return dung_model
 
-    for cx in range(-rd, rd + 1):
-        for cz in range(-rd, rd + 1):
-            wx = (cx + 0.5) * cs
-            wz = (cz + 0.5) * cs
+# ---------------------------------------------------------------------------
+# LARGE STRUCTURES: towers & ruins
+# ---------------------------------------------------------------------------
+def emit_structures(ws, hmap, cfg, rng):
+    W  = len(hmap)
+    CELL = 4
+    n_struct = cfg.get("structures", 5)
+    struct_model = make_model(ws, "Structures")
 
-            biome_n   = fbm(wx * ns * 0.5, wz * ns * 0.5, seed + 100)
-            biome_idx = int(biome_n * len(biomes)) % len(biomes)
-            biome     = biomes[biome_idx]
-            bc        = BIOME_COLORS.get(biome, BIOME_COLORS["Forest"])
-            hs        = BIOME_HEIGHT_SCALE.get(biome, 1.0)
+    for _ in range(n_struct):
+        x = rng.randint(10, W-10)
+        z = rng.randint(10, W-10)
+        h = int(hmap[z][x])
+        cx_ = (x - W/2) * CELL
+        cz_ = (z - W/2) * CELL
+        kind = rng.choice(["Tower", "Ruin"])
 
-            h_norm = max(0, min(1, fbm(wx * ns, wz * ns, seed))) * hs
-            h      = max(4, h_norm * mh)
+        if kind == "Tower":
+            # Base
+            make_part(struct_model, "TowerBase", cx_, h+4,  cz_, 12, 8, 12, color="130 130 130", material="SmoothPlastic")
+            # Middle
+            make_part(struct_model, "TowerMid",  cx_, h+14, cz_, 10, 12, 10, color="130 130 130", material="SmoothPlastic")
+            # Top
+            make_part(struct_model, "TowerTop",  cx_, h+24, cz_, 8,  6,  8,  color="163 162 165")
+            # Flag
+            make_part(struct_model, "TowerFlag", cx_, h+30, cz_, 1,  8,  1,  color="196 40 28")
+        else:  # Ruin
+            for rp in range(rng.randint(3, 7)):
+                offx = rng.randint(-8, 8)
+                offz = rng.randint(-8, 8)
+                rh2  = rng.randint(2, 10)
+                make_part(struct_model, "RuinPillar",
+                          cx_+offx, h+rh2//2, cz_+offz,
+                          rng.randint(2,4), rh2, rng.randint(2,4),
+                          color="163 162 165")
+    return struct_model
 
-            is_water = h < wl
-            is_beach = (not is_water) and (beach_lo <= h <= beach_hi)
-            is_snow  = (not is_water) and (h >= snow_threshold)
+# ---------------------------------------------------------------------------
+# ROJO EXPORT
+# ---------------------------------------------------------------------------
+def export_rojo(cfg, hmap, rng, out_dir="src"):
+    os.makedirs(out_dir, exist_ok=True)
+    # Write BiomeBlending stub (real Lua is in src/)
+    shutil.copy2("src/BiomeBlending.lua", os.path.join(out_dir, "BiomeBlending.lua")) if os.path.exists("src/BiomeBlending.lua") else None
+    # Serialise heightmap as JSON for Rojo plugin import
+    with open(os.path.join(out_dir, "heightmap.json"), "w") as f:
+        json.dump({"heightmap": [hmap[z] for z in range(0, len(hmap), 4)],
+                   "config": cfg}, f, indent=2)
+    print(f"[Rojo] Exported to {out_dir}/")
 
-            if is_snow:
-                sc = BIOME_SNOW_COLOR
-            elif is_beach:
-                sc = BIOME_SAND_COLOR
-            else:
-                sc = bc
+# ---------------------------------------------------------------------------
+# STATS
+# ---------------------------------------------------------------------------
+def print_stats(hmap, cfg):
+    W  = len(hmap)
+    mH = cfg.get("maxHeight", 120)
+    wL = cfg.get("waterLevel", 20)
+    total = W * W
+    ocean = sum(1 for z in range(W) for x in range(W) if hmap[z][x] <= wL)
+    land  = total - ocean
+    peak  = max(hmap[z][x] for z in range(W) for x in range(W))
+    print("\n┌─────────────────── BUILD STATS v3.0 ───────────────────┐")
+    print(f"│  Grid        : {W}×{W} cells")
+    print(f"│  Max height  : {peak:.1f} / {mH}")
+    print(f"│  Land cells  : {land:,}  ({100*land//total}%)")
+    print(f"│  Ocean cells : {ocean:,}  ({100*ocean//total}%)")
+    print(f"│  Rivers      : {cfg.get('rivers', 4)}")
+    print(f"│  Dungeon rms : {cfg.get('dungeonRooms', 6)}")
+    print(f"│  Structures  : {cfg.get('structures', 5)}")
+    print("└────────────────────────────────────────────────────────┘\n")
 
-            if is_water:
-                stats["water"] += 1
-                parts.append(make_part(
-                    f"G_{cx}_{cz}", wx, h/2, wz, cs, max(2, h), cs,
-                    bc["r"]//2, bc["g"]//2, bc["b"]//2
-                ))
-                parts.append(make_part(
-                    f"W_{cx}_{cz}", wx, wl, wz, cs, 2, cs,
-                    BIOME_WATER_COLOR["r"], BIOME_WATER_COLOR["g"], BIOME_WATER_COLOR["b"],
-                    transp=0.45
-                ))
-            else:
-                stats[biome] = stats.get(biome, 0) + 1
-                if is_beach: stats["beach"] += 1
-                if is_snow:  stats["snow"]  += 1
-                parts.append(make_part(
-                    f"C_{cx}_{cz}", wx, h/2, wz, cs, max(4, h), cs,
-                    sc["r"], sc["g"], sc["b"]
-                ))
+# ---------------------------------------------------------------------------
+# BUILD
+# ---------------------------------------------------------------------------
+def build(config_path, output_path, fmt):
+    cfg  = load_config(config_path)
+    seed = cfg.get("seed", 42)
+    rng  = random.Random(seed)
+    # Re-seed permutation table with world seed
+    random.seed(seed)
+    _perm[:] = list(range(256))
+    random.shuffle(_perm)
+    _perm[256:] = _perm[:256]
+    random.seed(seed)
 
-            if not is_water:
-                prefix = f"{biome}_{cx}_{cz}"
-                if biome == "Forest" and not is_snow:
-                    for t in range(rng.randint(2, 5)):
-                        tx = wx + rng.uniform(-cs*0.4, cs*0.4)
-                        tz = wz + rng.uniform(-cs*0.4, cs*0.4)
-                        parts += make_tree(f"{prefix}_t{t}", tx, h, tz, rng)
-                elif biome == "Swamp":
-                    for t in range(rng.randint(1, 4)):
-                        tx = wx + rng.uniform(-cs*0.4, cs*0.4)
-                        tz = wz + rng.uniform(-cs*0.4, cs*0.4)
-                        parts += make_swamp_tree(f"{prefix}_sw{t}", tx, h, tz, rng)
-                elif biome == "Desert" and not is_beach:
-                    for t in range(rng.randint(1, 3)):
-                        tx = wx + rng.uniform(-cs*0.4, cs*0.4)
-                        tz = wz + rng.uniform(-cs*0.4, cs*0.4)
-                        parts += make_cactus(f"{prefix}_ca{t}", tx, h, tz, rng)
-                elif biome == "Volcanic":
-                    for r_i in range(rng.randint(1, 3)):
-                        rx = wx + rng.uniform(-cs*0.3, cs*0.3)
-                        rz = wz + rng.uniform(-cs*0.3, cs*0.3)
-                        parts += make_volcanic_rock(f"{prefix}_vr{r_i}", rx, h, rz, rng)
-                elif biome == "Tundra":
-                    for r_i in range(rng.randint(1, 2)):
-                        rx = wx + rng.uniform(-cs*0.3, cs*0.3)
-                        rz = wz + rng.uniform(-cs*0.3, cs*0.3)
-                        parts += make_tundra_boulder(f"{prefix}_tb{r_i}", rx, h, rz, rng)
-                elif biome == "Ocean":
-                    if rng.random() > 0.65:
-                        rx = wx + rng.uniform(-cs*0.2, cs*0.2)
-                        rz = wz + rng.uniform(-cs*0.2, cs*0.2)
-                        parts += make_ocean_rock(f"{prefix}_or", rx, h, rz, rng)
+    NEXT_ID[0] = 1
+    print(f"[v3.0] Building world seed={seed} ...")
 
-    total = sum(v for k, v in stats.items())
-    print("\n  Generation Stats:")
-    for k, v in sorted(stats.items(), key=lambda x: -x[1]):
-        bar = "\u2588" * max(0, int(v / max(total, 1) * 30))
-        print(f"    {k:<12} {v:>4}  {bar}")
-    print(f"    {'TOTAL':<12} {total:>4}  (parts: {len(parts)})\n")
-    return parts
+    hmap = generate_heightmap(cfg, rng)
+    hmap = carve_rivers(hmap, cfg, rng)
 
-def generate_spawns(cfg, rng):
-    biomes  = cfg["biomes"] or ["Forest"]
-    density = cfg["mobs"]["density"]
-    rd      = cfg["renderDistance"]
-    cs      = cfg["chunkSize"]
-    spawns  = []
-    count   = max(1, density * (2*rd + 1))
-    for i in range(count):
-        bx = rng.uniform(-rd*cs, rd*cs)
-        bz = rng.uniform(-rd*cs, rd*cs)
-        spawns.append(make_part(f"SP_{i}", bx, 2, bz, 4, 1, 4, 255, 80, 80))
-    return spawns
+    # --- RBXLX tree ---
+    root = ET.Element("roblox", **{"xmlns:xmime":"http://www.w3.org/2005/05/xmlmime",
+                                    "xmlns:xsi":  "http://www.w3.org/2001/XMLSchema-instance",
+                                    "xsi:noNamespaceSchemaLocation":"http://www.roblox.com/roblox.xsd",
+                                    "version":"4"})
+    ws = ET.SubElement(root, "Item", **{"class":"Workspace", "referent":"RBX0"})
+    ET.SubElement(ws, "Properties")
 
-def make_world_config_lua(cfg):
-    biomes_lua = "{" + ", ".join(f'"{b}"' for b in (cfg["biomes"] or ["Forest"])) + "}"
-    ns = cfg["noiseScale"]
-    return f"""-- WorldConfig.lua (auto-generated {datetime.now().strftime("%Y-%m-%d %H:%M")})
-return {{
-    WORLD_NAME      = "{xml_escape(cfg["worldName"])}",
-    SEED            = {cfg["seed"]},
-    CHUNK_SIZE      = {cfg["chunkSize"]},
-    RENDER_DISTANCE = {cfg["renderDistance"]},
-    MAX_HEIGHT      = {cfg["maxHeight"]},
-    WATER_LEVEL     = {cfg["waterLevel"]},
-    NOISE_SCALE     = {ns},
-    BIOMES          = {biomes_lua},
-    MOBS = {{
-        DENSITY    = {cfg["mobs"]["density"]},
-        DIFFICULTY = "{cfg["mobs"]["difficulty"]}",
-        BOSSES     = {"true" if cfg["mobs"]["bosses"] else "false"},
-        GROUP_AI   = {"true" if cfg["mobs"]["groupAI"] else "false"},
-    }},
-    STRUCTURES = {{
-        VILLAGES   = {"true" if cfg["structures"]["villages"] else "false"},
-        DUNGEONS   = {"true" if cfg["structures"]["dungeons"] else "false"},
-        RIVERS     = {"true" if cfg["structures"]["rivers"] else "false"},
-        ORES       = {"true" if cfg["structures"]["ores"] else "false"},
-    }},
-    SYSTEMS = {{
-        DAY_NIGHT_CYCLE    = {"true" if cfg["systems"]["dayNightCycle"] else "false"},
-        WEATHER            = {"true" if cfg["systems"]["weather"] else "false"},
-        BASE_BUILDING      = {"true" if cfg["systems"]["baseBuilding"] else "false"},
-        CLANS              = {"true" if cfg["systems"]["clans"] else "false"},
-        DAY_LENGTH_MINUTES = {cfg["systems"]["dayLengthMinutes"]},
-    }},
-}}
-"""
+    emit_terrain(ws, hmap, cfg, rng)
+    emit_props(ws, hmap, cfg, rng)
+    emit_dungeons(ws, cfg, rng)
+    emit_structures(ws, hmap, cfg, rng)
 
-INIT_SRC = """-- init.server.lua (auto-generated)
-local SSS = game:GetService(\"ServerScriptService\")
-local cfg = require(SSS:WaitForChild(\"WorldConfig\"))
-print(\"[World] Init -- Seed:\", cfg.SEED)
-print(\"[World] Biomes:\", table.concat(cfg.BIOMES, \", \"))
-"""
+    if fmt == "rojo":
+        export_rojo(cfg, hmap, rng)
+    else:
+        os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        pretty = minidom.parseString(ET.tostring(root, encoding="unicode")).toprettyxml(indent="  ")
+        with open(output_path, "w", encoding="utf-8") as f:
+            f.write(pretty)
+        print(f"[v3.0] Written → {output_path}")
 
-def build_rbxlx(cfg):
-    rng    = random.Random(cfg["seed"])
-    parts  = generate_terrain(cfg, rng)
-    spawns = generate_spawns(cfg, rng)
-    terrain_xml = "\n    ".join(parts)
-    spawn_xml   = "\n    ".join(spawns)
-    wc_src      = make_world_config_lua(cfg)
-    return f"""<?xml version="1.0" encoding="utf-8"?>
-<roblox xmlns:xmime="http://www.w3.org/2005/05/xmlmime"
-        xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-        xsi:noNamespaceSchemaLocation="http://www.roblox.com/roblox.xsd"
-        version="4">
-<!-- build_world.py v2.0 | {xml_escape(cfg["worldName"])} | seed:{cfg["seed"]} | {datetime.now().strftime("%Y-%m-%d %H:%M")} -->
-<Item class="Workspace">
-  <Properties>
-    <string name="Name">Workspace</string>
-    <bool name="StreamingEnabled">true</bool>
-    <float name="Gravity">196.2</float>
-  </Properties>
-  <Item class="Model"><Properties><string name="Name">Terrain_Chunks</string></Properties>
-    {terrain_xml}
-  </Item>
-  <Item class="Model"><Properties><string name="Name">SpawnPoints</string></Properties>
-    {spawn_xml}
-  </Item>
-  <Item class="Part"><Properties>
-    <string name="Name">Baseplate</string>
-    <bool name="Anchored">true</bool>
-    <bool name="Locked">true</bool>
-    {make_cframe(0, -10, 0)}
-    <Vector3 name="Size"><X>2048</X><Y>20</Y><Z>2048</Z></Vector3>
-    <Color3 name="Color"><R>0.388</R><G>0.372</G><B>0.384</B></Color3>
-  </Properties></Item>
-</Item>
-<Item class="Lighting">
-  <Properties>
-    <string name="Name">Lighting</string>
-    <float name="Brightness">2.2</float>
-    <float name="ClockTime">13.5</float>
-    <bool name="GlobalShadows">true</bool>
-    <string name="Technology">ShadowMap</string>
-  </Properties>
-</Item>
-<Item class="ServerScriptService">
-  <Properties><string name="Name">ServerScriptService</string></Properties>
-  <Item class="ModuleScript"><Properties>
-    <string name="Name">WorldConfig</string>
-    <ProtectedString name="Source">{xml_escape(wc_src)}</ProtectedString>
-  </Properties></Item>
-  <Item class="Script"><Properties>
-    <string name="Name">init.server</string>
-    <ProtectedString name="Source">{xml_escape(INIT_SRC)}</ProtectedString>
-  </Properties></Item>
-</Item>
-<Item class="ReplicatedStorage">
-  <Properties><string name="Name">ReplicatedStorage</string></Properties>
-  <Item class="RemoteEvent"><Properties><string name="Name">WorldEvents</string></Properties></Item>
-  <Item class="RemoteFunction"><Properties><string name="Name">InventoryRemote</string></Properties></Item>
-</Item>
-</roblox>"""
+    print_stats(hmap, cfg)
 
-def main():
-    if len(sys.argv) < 2:
-        print("Usage: python build_world.py world_config.json [output.rbxlx]")
-        sys.exit(1)
-    config_path = Path(sys.argv[1])
-    if not config_path.exists():
-        print(f"Error: {config_path} not found")
-        sys.exit(1)
-    with open(config_path, "r", encoding="utf-8") as f:
-        cfg = json.load(f)
-    out_name = sys.argv[2] if len(sys.argv) >= 3 else cfg.get("worldName","MyWorld").replace(" ","_")+".rbxlx"
-    out_path = Path(out_name)
-    print(f"\n[build_world v2.0] '{cfg.get('worldName')}' | seed {cfg.get('seed')}")
-    xml = build_rbxlx(cfg)
-    with open(out_path, "w", encoding="utf-8") as f:
-        f.write(xml)
-    size_kb = out_path.stat().st_size / 1024
-    print(f"[build_world v2.0] Done -> {out_path} ({size_kb:.1f} KB)")
+# ---------------------------------------------------------------------------
+# WATCH mode
+# ---------------------------------------------------------------------------
+def watch_loop(config_path, output_path, fmt):
+    print(f"[--watch] Monitoring {config_path} for changes ... (Ctrl+C to stop)")
+    last_hash = ""
+    while True:
+        try:
+            with open(config_path, "rb") as f:
+                h = hashlib.md5(f.read()).hexdigest()
+            if h != last_hash:
+                last_hash = h
+                print(f"[--watch] Change detected, rebuilding ...")
+                try:
+                    build(config_path, output_path, fmt)
+                except Exception as e:
+                    print(f"[--watch] Build error: {e}")
+            time.sleep(1)
+        except KeyboardInterrupt:
+            print("[--watch] Stopped.")
+            break
+        except FileNotFoundError:
+            time.sleep(2)
 
-if __name__ == "__main__":
-    main()
+# ---------------------------------------------------------------------------
+# MAIN
+# ---------------------------------------------------------------------------
+if args.watch:
+    watch_loop(args.config, args.output, args.format)
+else:
+    build(args.config, args.output, args.format)

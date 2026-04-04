@@ -1,0 +1,13 @@
+{
+  "seed": 6006,
+  "worldSize": 256,
+  "maxHeight": 90,
+  "waterLevel": 25,
+  "noiseScale": 0.012,
+  "rivers": 4,
+  "riverDepth": 7,
+  "dungeonRooms": 10,
+  "structures": 7,
+  "propDensity": 0.08,
+  "biomes": ["Swamp", "Forest"]
+}

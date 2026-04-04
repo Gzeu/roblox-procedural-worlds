@@ -1,0 +1,70 @@
+name: CI — Validate & Build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  validate-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install jsonschema
+
+      - name: Validate JSON schema
+        run: |
+          python - <<'EOF'
+          import json, jsonschema, glob, sys
+          schema = {
+            "type": "object",
+            "required": ["seed", "worldSize", "maxHeight", "waterLevel", "biomes"],
+            "properties": {
+              "seed":        {"type": "number"},
+              "worldSize":   {"type": "number", "minimum": 64, "maximum": 512},
+              "maxHeight":   {"type": "number", "minimum": 10},
+              "waterLevel":  {"type": "number", "minimum": 1},
+              "noiseScale":  {"type": "number"},
+              "rivers":      {"type": "number", "minimum": 0},
+              "riverDepth":  {"type": "number", "minimum": 1},
+              "dungeonRooms":{"type": "number", "minimum": 0},
+              "structures":  {"type": "number", "minimum": 0},
+              "propDensity": {"type": "number"},
+              "biomes":      {"type": "array", "items": {"type": "string"}}
+            }
+          }
+          errors = []
+          for path in glob.glob("configs/*.json"):
+            with open(path) as f:
+              try:
+                data = json.load(f)
+                jsonschema.validate(data, schema)
+                print(f"✓  {path}")
+              except Exception as e:
+                errors.append(f"✗  {path}: {e}")
+          if errors:
+            print("\n".join(errors)); sys.exit(1)
+          EOF
+
+      - name: Smoke-build (seed=1)
+        run: |
+          echo '{"seed":1,"worldSize":64,"maxHeight":80,"waterLevel":15,"noiseScale":0.008,
+                 "rivers":2,"riverDepth":5,"dungeonRooms":3,"structures":2,
+                 "propDensity":0.03,"biomes":["Forest","Ocean"]}' > /tmp/test_config.json
+          python tools/build_world.py /tmp/test_config.json --output /tmp/test_world.rbxlx
+          test -f /tmp/test_world.rbxlx && echo "Build OK" || (echo "Build FAILED"; exit 1)
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-world
+          path: /tmp/test_world.rbxlx
