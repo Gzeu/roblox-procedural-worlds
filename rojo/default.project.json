@@ -2,47 +2,96 @@
   "name": "roblox-procedural-worlds",
   "tree": {
     "$className": "DataModel",
+
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "ProceduralWorldsServer": {
         "$className": "Script",
         "$path": "src/init.server.lua",
-        "WorldGenerator":       { "$path": "src/WorldGenerator.lua" },
-        "WorldConfig":          { "$path": "src/WorldConfig.lua" },
-        "BiomeResolver":        { "$path": "src/BiomeResolver.lua" },
-        "ChunkHandler":         { "$path": "src/ChunkHandler.lua" },
-        "OreGenerator":         { "$path": "src/OreGenerator.lua" },
-        "RiverCarver":          { "$path": "src/RiverCarver.lua" },
-        "DungeonGenerator":     { "$path": "src/DungeonGenerator.lua" },
-        "LootTable":            { "$path": "src/LootTable.lua" },
-        "MobSpawner":           { "$path": "src/MobSpawner.lua" },
-        "QuestSystem":          { "$path": "src/QuestSystem.lua" },
-        "AdminPanel":           { "$path": "src/AdminPanel.lua" },
-        "LODManager":           { "$path": "src/LODManager.lua" },
-        "VillageGenerator":     { "$path": "src/VillageGenerator.lua" },
-        "PlayerPersistence":    { "$path": "src/PlayerPersistence.lua" },
-        "NPCDialogue":          { "$path": "src/NPCDialogue.lua" },
-        "DayNightCycle":        { "$path": "src/DayNightCycle.lua" },
-        "WeatherManager":       { "$path": "src/WeatherManager.lua" },
-        "SeedPersistence":      { "$path": "src/SeedPersistence.lua" },
-        "StreamingManager":     { "$path": "src/StreamingManager.lua" },
-        "AssetPlacer":          { "$path": "src/AssetPlacer.lua" },
-        "StructurePlacer":      { "$path": "src/StructurePlacer.lua" },
-        "CombatSystem":         { "$path": "src/CombatSystem.lua" },
-        "Inventory":            { "$path": "src/Inventory.lua" },
-        "EconomyManager":       { "$path": "src/EconomyManager.lua" },
-        "SkillSystem":          { "$path": "src/SkillSystem.lua" },
-        "BossEncounter":        { "$path": "src/BossEncounter.lua" },
-        "FactionSystem":        { "$path": "src/FactionSystem.lua" },
-        "CraftingSystem":       { "$path": "src/CraftingSystem.lua" },
-        "ClanSystem":           { "$path": "src/ClanSystem.lua" },
-        "DailyRewards":         { "$path": "src/DailyRewards.lua" }
+
+        "WorldConfig":              { "$className": "ModuleScript", "$path": "src/WorldConfig.lua" },
+        "EventBus":                 { "$className": "ModuleScript", "$path": "src/EventBus.lua" },
+        "DataStoreManager":         { "$className": "ModuleScript", "$path": "src/DataStoreManager.lua" },
+        "SeedPersistence":          { "$className": "ModuleScript", "$path": "src/SeedPersistence.lua" },
+        "SeedShare":                { "$className": "ModuleScript", "$path": "src/SeedShare.lua" },
+        "AntiExploit":              { "$className": "ModuleScript", "$path": "src/AntiExploit.lua" },
+        "NotificationBridge":       { "$className": "ModuleScript", "$path": "src/NotificationBridge.lua" },
+        "ObjectPool":               { "$className": "ModuleScript", "$path": "src/ObjectPool.lua" },
+
+        "WorldGenerator":           { "$className": "ModuleScript", "$path": "src/WorldGenerator.lua" },
+        "ChunkHandler":             { "$className": "ModuleScript", "$path": "src/ChunkHandler.lua" },
+        "BiomeResolver":            { "$className": "ModuleScript", "$path": "src/BiomeResolver.lua" },
+        "StreamingManager":         { "$className": "ModuleScript", "$path": "src/StreamingManager.lua" },
+        "ChunkPredictor":           { "$className": "ModuleScript", "$path": "src/ChunkPredictor.lua" },
+        "LODManager":               { "$className": "ModuleScript", "$path": "src/LODManager.lua" },
+        "RiverCarver":              { "$className": "ModuleScript", "$path": "src/RiverCarver.lua" },
+        "VillageGenerator":         { "$className": "ModuleScript", "$path": "src/VillageGenerator.lua" },
+        "DungeonGenerator":         { "$className": "ModuleScript", "$path": "src/DungeonGenerator.lua" },
+        "MobSpawner":               { "$className": "ModuleScript", "$path": "src/MobSpawner.lua" },
+        "OreGenerator":             { "$className": "ModuleScript", "$path": "src/OreGenerator.lua" },
+        "StructurePlacer":          { "$className": "ModuleScript", "$path": "src/StructurePlacer.lua" },
+        "AssetPlacer":              { "$className": "ModuleScript", "$path": "src/AssetPlacer.lua" },
+        "DayNightCycle":            { "$className": "ModuleScript", "$path": "src/DayNightCycle.lua" },
+        "WeatherManager":           { "$className": "ModuleScript", "$path": "src/WeatherManager.lua" },
+
+        "CombatSystem":             { "$className": "ModuleScript", "$path": "src/CombatSystem.lua" },
+        "SkillSystem":              { "$className": "ModuleScript", "$path": "src/SkillSystem.lua" },
+        "QuestSystem":              { "$className": "ModuleScript", "$path": "src/QuestSystem.lua" },
+        "ProceduralQuestGen":       { "$className": "ModuleScript", "$path": "src/ProceduralQuestGen.lua" },
+        "NPCDialogue":              { "$className": "ModuleScript", "$path": "src/NPCDialogue.lua" },
+        "Inventory":                { "$className": "ModuleScript", "$path": "src/Inventory.lua" },
+        "PlayerPersistence":        { "$className": "ModuleScript", "$path": "src/PlayerPersistence.lua" },
+        "LootTable":                { "$className": "ModuleScript", "$path": "src/LootTable.lua" },
+        "CraftingSystem":           { "$className": "ModuleScript", "$path": "src/CraftingSystem.lua" },
+        "AdminPanel":               { "$className": "ModuleScript", "$path": "src/AdminPanel.lua" },
+        "TeleportManager":          { "$className": "ModuleScript", "$path": "src/TeleportManager.lua" },
+        "ParticleEffects":          { "$className": "ModuleScript", "$path": "src/ParticleEffects.lua" },
+        "LeaderboardManager":       { "$className": "ModuleScript", "$path": "src/LeaderboardManager.lua" },
+        "DailyRewards":             { "$className": "ModuleScript", "$path": "src/DailyRewards.lua" },
+        "GamepassManager":          { "$className": "ModuleScript", "$path": "src/GamepassManager.lua" },
+        "DeveloperProductHandler":  { "$className": "ModuleScript", "$path": "src/DeveloperProductHandler.lua" },
+        "PremiumPerks":             { "$className": "ModuleScript", "$path": "src/PremiumPerks.lua" },
+
+        "MobAI":                    { "$className": "ModuleScript", "$path": "src/MobAI.lua" },
+        "AINavigator":              { "$className": "ModuleScript", "$path": "src/AINavigator.lua" },
+        "BehaviorTree":             { "$className": "ModuleScript", "$path": "src/BehaviorTree.lua" },
+        "AIDirector":               { "$className": "ModuleScript", "$path": "src/AIDirector.lua" },
+        "AIConfig":                 { "$className": "ModuleScript", "$path": "src/AIConfig.lua" },
+        "AIMemory":                 { "$className": "ModuleScript", "$path": "src/AIMemory.lua" },
+        "AIGroupBehavior":          { "$className": "ModuleScript", "$path": "src/AIGroupBehavior.lua" },
+
+        "BossEncounter":            { "$className": "ModuleScript", "$path": "src/BossEncounter.lua" },
+        "FightingStyles":           { "$className": "ModuleScript", "$path": "src/FightingStyles.lua" },
+        "AwakenSystem":             { "$className": "ModuleScript", "$path": "src/AwakenSystem.lua" },
+        "ClanSystem":               { "$className": "ModuleScript", "$path": "src/ClanSystem.lua" },
+        "FactionSystem":            { "$className": "ModuleScript", "$path": "src/FactionSystem.lua" },
+        "RunModifiers":             { "$className": "ModuleScript", "$path": "src/RunModifiers.lua" },
+        "BaseBuilding":             { "$className": "ModuleScript", "$path": "src/BaseBuilding.lua" },
+        "EconomyManager":           { "$className": "ModuleScript", "$path": "src/EconomyManager.lua" }
       }
     },
-    "StarterPlayerScripts": {
-      "$className": "StarterPlayerScripts",
-      "WeatherClient":         { "$path": "src/WeatherClient.lua" },
-      "NPCDialogueClient":     { "$path": "src/NPCDialogueClient.lua" }
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "WeatherClient":     { "$className": "LocalScript", "$path": "src/WeatherClient.lua" },
+        "NPCDialogueClient": { "$className": "LocalScript", "$path": "src/NPCDialogueClient.lua" }
+      }
+    },
+
+    "ReplicatedStorage": {
+      "$className": "ReplicatedStorage",
+      "ProceduralWorldsRemotes": {
+        "$className": "Folder",
+        "WeatherRemote":      { "$className": "RemoteEvent" },
+        "NPCDialogueRemote":  { "$className": "RemoteEvent" },
+        "NotificationRemote": { "$className": "RemoteEvent" },
+        "BossSpawnRemote":    { "$className": "RemoteEvent" },
+        "LevelUpRemote":      { "$className": "RemoteEvent" },
+        "QuestCompleteRemote":{ "$className": "RemoteEvent" },
+        "SeedRemote":         { "$className": "RemoteFunction" }
+      }
     }
   }
 }
