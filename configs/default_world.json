@@ -1,0 +1,29 @@
+{
+  "worldName": "My Procedural World",
+  "seed": 12345,
+  "chunkSize": 64,
+  "renderDistance": 3,
+  "maxHeight": 120,
+  "waterLevel": 20,
+  "noiseScale": 0.05,
+  "biomes": ["Forest", "Desert", "Tundra"],
+  "mobs": {
+    "density": 5,
+    "difficulty": "normal",
+    "bosses": true,
+    "groupAI": true
+  },
+  "structures": {
+    "villages": true,
+    "dungeons": true,
+    "rivers": true,
+    "ores": true
+  },
+  "systems": {
+    "dayNightCycle": true,
+    "weather": true,
+    "baseBuilding": false,
+    "clans": false,
+    "dayLengthMinutes": 20
+  }
+}
