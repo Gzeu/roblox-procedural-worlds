@@ -5,6 +5,23 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [2.8.0] - 2026-04-14
+
+### Added
+- **PartySystem** — party creation, invite/kick, equal XP split, loot visibility radius, PlayerRemoving cleanup
+- **WorldEventManager** — random global events: BloodMoon (2x mobs), MeteorShower (rare ore impact), Invasion (wave-based), FogWave; configurable interval
+- **SeasonSystem** — 4 seasons (Spring/Summer/Autumn/Winter), 30-min real-time rotation, TweenService lighting transitions, snow/leaf particle flags, WaterFlow freeze integration
+- **WaterFlow** — procedural lakes from heightmap basins, waterfall generation on steep slopes, particle mist emitters, SeasonSystem freeze/unfreeze via EventBus, FishingSystem hook
+- **CaveSystem** — 3D Drunkard's Walk tunnel network, Cellular Automata widening, 3 underground biomes (Gloom/Crystal/Magma), lava pool damage, DungeonGenerator auto-connect
+- **vercel.json** — static deploy config for World Configurator on Vercel
+
+### Changed
+- WorldConfig: added `Party`, `Events`, `Seasons`, `WaterFlow`, `Caves` config sections
+- EventBus: new events `PartyCreated`, `SeasonChanged`, `FreezeWater`, `LakeCreated`, `WaterfallCreated`, `CaveGenerated`, `WorldEvent`, `MeteorImpact`, `InvasionWave`
+- Master Prompt updated to v2.8 with all new modules documented
+
+---
+
 ## [2.7.0] — 2026-04-03
 
 ### Added
