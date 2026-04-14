@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "name": "roblox-world-configurator",
+  "builds": [
+    {
+      "src": "tools/world-configurator.html",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    { "src": "/", "dest": "/tools/world-configurator.html" },
+    { "src": "/configurator", "dest": "/tools/world-configurator.html" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "X-Content-Type-Options", "value": "nosniff" },
+        { "key": "X-Frame-Options", "value": "SAMEORIGIN" },
+        { "key": "Cache-Control", "value": "public, max-age=3600" }
+      ]
+    }
+  ]
+}
